@@ -2,13 +2,7 @@ import { reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import pako from 'pako'
 
-import type {
-  NamespaceName,
-  EventName,
-  Machine,
-  StateName,
-  Project,
-} from '@/types'
+import type { NamespaceName, EventName, Machine, StateName, Project } from '@/types'
 
 export const useProjectStore = defineStore('project', () => {
   const project = ref<Project>({

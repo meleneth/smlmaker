@@ -1,6 +1,6 @@
 <script setup lang="ts">
 defineOptions({
-  name: 'SplitOneTwoTwoOne'
+  name: 'SplitOneTwoTwoOne',
 })
 </script>
 <template>

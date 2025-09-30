@@ -50,24 +50,23 @@ defineOptions({
   </header-section>
 
   <div v-for="namespace in project.namespaces" :key="namespace">
-  <header-section>
-    <template v-slot:label>Namespace: 
-      <delete-button-for :handler="() => project_store.removeNamespace(namespace)">
+    <header-section>
+      <template v-slot:label
+        >Namespace:
+        <delete-button-for :handler="() => project_store.removeNamespace(namespace)">
           {{ namespace }}
         </delete-button-for>
       </template>
-    <template v-slot:default>
-       <fancy-text-input
-        v-model="machineToAdd"
-        :handler="() => add_machine(namespace)"
-        id="machine_to_add_input"
-      >
-        Add Machine
-      </fancy-text-input>
-    </template>
-  </header-section>
-  <MachineEdit> </MachineEdit>
+      <template v-slot:default>
+        <fancy-text-input
+          v-model="machineToAdd"
+          :handler="() => add_machine(namespace)"
+          id="machine_to_add_input"
+        >
+          Add Machine
+        </fancy-text-input>
+      </template>
+    </header-section>
+    <MachineEdit> </MachineEdit>
   </div>
- 
- 
 </template>
