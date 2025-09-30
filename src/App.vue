@@ -1,8 +1,20 @@
-<!-- src/App.vue -->
+<script setup lang="ts">
+import { RouterLink, RouterView } from 'vue-router'
+</script>
+
 <template>
-  <nav>
-    <router-link to="/">Home</router-link> |
-    <router-link to="/about">About</router-link>
-  </nav>
-  <router-view />
+  <div class="relative">
+    <div class="fixed top-0 left-0 w-full z-10 p-4 shadow-md">
+      <header>
+        <nav class="flex flex-wrap items-center justify-center">
+          <RouterLink class="p-2.5" to="/">Home</RouterLink>
+          <RouterLink class="p-2.5" to="/project">Project</RouterLink>
+          <RouterLink class="p-2.5" to="/machines">Machines</RouterLink>
+        </nav>
+      </header>
+    </div>
+    <div class="mt-16 p-4">
+      <RouterView />
+    </div>
+  </div>
 </template>

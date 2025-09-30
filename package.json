@@ -9,15 +9,18 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "prepare": "husky",
-    "test": "vitest"
+    "test": "vitest",
+    "type-check": "vue-tsc --build --force"
   },
   "dependencies": {
+    "pako": "^2.1.0",
     "pinia": "^3.0.2",
     "vue": "^3.5.13",
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
     "@types/node": "^24.5.2",
+    "@types/pako": "^2.0.4",
     "@typescript-eslint/eslint-plugin": "^8.32.1",
     "@typescript-eslint/parser": "^8.32.1",
     "@vitejs/plugin-vue": "^5.2.3",

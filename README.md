@@ -1,7 +1,16 @@
-# Vue 3 + TypeScript + Vite + Pinia + Vue-Router + Tailwind + Eslint + Prettier + Husky
+SMLmaker
 
-npx degit meleneth/stackwright-vue my-app
+This project is a web interace aimed at helping make boost_exl / sml state machines
+be easier to create.
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
-
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+# H4sIAAAAAAAAA71Wy27rIBD9F9b5gmyrqJu+pHRXWRYx05ReGywY5zay/O8FjDH41mkS93ZlAzPnzJ
+# OhJYJWQNZke39X0T+gyIowijTHY223Dw247Rw+aqnQnB5AaS6FOasVKCiBajDbGqUCTdYv7YD4pOQ7
+# FE6FKk53ZXpch2NPFcuXjSN33y5bkQrwTbJEnzKW219d08IaQNW+qUCgFTIaXOeFrOoGgZH1Ky01rI
+# gCbJTQzz3fQ6S8k+xotki3SvDhYACvwd54xRncihZvXFxl9X1QncFGRYXmaFKUo1zC9ByA5sk0UoSF
+# PFuLMU9RSIHwgQtJbnqU72kMqDpasiJoXEu2sVAxo1HWpmEKo2klDV4bVeEaVWOghgT7ZV9JfhGlxO
+# /0wfOLwcl02Zvh9jprgjVeCu9PiIGn3TD+hctj+2VpN1uPSjmIDc7dRAxtd47TiZeTCCx2ejRg6y+p
+# Nlw2g4TLtsBHc7spzmBI14HD35lL7Vxnz6I/FeCvTBtrN4RSX2DTNAH/2UaX3YvsS+rhd4311Tdrbt
+# IpU4OCA6e6+J/q/5UKvzQiWT+Yk+qPR6af2nLn++GVQ5lOaPcJghoVF3uDOy2MH8IaB+O1aCMWDAWL
+# 0Th/yWIRN/kiEZexVGScxJHcmOtUeN9QxSK5W7u2IrGPyUj+3k1Iw9tHO/VBYT/DJ44kwRBsRiY2bZ
+# tKLErlOKx/IJWmTXicqLh9pvGdDO7l7O7gxHn/wj0ZjKfpO3mBOeG9HMUj9PQ0GK4CF2U06z4BcoQ9
+# Bl8MAAA=
