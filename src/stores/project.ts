@@ -1,8 +1,8 @@
-import { reactive, ref } from 'vue'
+import { reactive, computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import pako from 'pako'
 
-import type { NamespaceName, EventName, Machine, StateName, Project } from '@/types'
+import type { NamespaceName, EventName, Machine, StateName, Project, Transition } from '@/types'
 
 export const useProjectStore = defineStore('project', () => {
   const project = ref<Project>({
@@ -45,6 +45,24 @@ export const useProjectStore = defineStore('project', () => {
 
   function addStateToMachine(name: StateName, machine: Machine) {
     machine.states.push(name)
+  }
+
+  function addGuardToMachine(name: GuardName, machine: Machine) {
+    machine.guards.push(name)
+  }
+
+  function addTransitionToMachine(
+    startState: StateName,
+    event: EventName,
+    targetState: StateName,
+    machine: Machine
+  ) {
+    const new_transition = reactive<Transition>({
+      event: event,
+      start_state: startState,
+      target_state: targetState,
+    })
+    machine.transitions.push(new_transition)
   }
 
   function generateExport(): string {
@@ -94,12 +112,29 @@ export const useProjectStore = defineStore('project', () => {
     project.value = parsed
   }
 
+  type MachinesByNamespace = Record<NamespaceName, Machine[]>
+
+  const machinesByNamespace = computed(() => {
+    const results: MachinesByNamespace = {} as MachinesByNamespace
+    project.value.namespaces.forEach((namespace) => {
+      results[namespace] = []
+    })
+
+    project.value.machines.forEach((machine) => {
+      results[machine.namespace].push(machine)
+    })
+    return results
+  })
+
   return {
     project,
     addMachine,
     addNamespace,
     addEventToMachine,
     addStateToMachine,
+    addGuardToMachine,
+    addTransitionToMachine,
+    machinesByNamespace,
     generateExport,
     hydrateExport,
     removeMachine,

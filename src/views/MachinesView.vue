@@ -49,7 +49,7 @@ defineOptions({
     </template>
   </header-section>
 
-  <div v-for="namespace in project.namespaces" :key="namespace">
+  <div v-for="(machines, namespace) of project_store.machinesByNamespace" :key="namespace">
     <header-section>
       <template v-slot:label
         >Namespace:
@@ -65,8 +65,8 @@ defineOptions({
         >
           Add Machine
         </fancy-text-input>
+        <MachineEdit :machine="machine" v-for="machine in machines"> </MachineEdit>
       </template>
     </header-section>
-    <MachineEdit> </MachineEdit>
   </div>
 </template>

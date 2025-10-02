@@ -15,6 +15,7 @@ describe('project Store', () => {
     project_store.addNamespace('myNamespace')
     expect(project_store.project.namespaces[0]).toEqual('myNamespace')
   })
+
   it('#addMachine', () => {
     const project_store = useProjectStore()
     project_store.addNamespace('myNamespace')
