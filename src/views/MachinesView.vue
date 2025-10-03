@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { storeToRefs } from 'pinia'
+//import { storeToRefs } from 'pinia'
 import { ref } from 'vue'
 
 import { useProjectStore } from '@/stores/project'
 const project_store = useProjectStore()
-const { project } = storeToRefs(project_store)
+//const { project } = storeToRefs(project_store)
 
 import type { NamespaceName } from '@/types'
 

@@ -10,10 +10,7 @@ const { project } = storeToRefs(project_store)
 
 <template>
   <split-one-two-two-one>
-    <template v-slot:two>
-      Instructions:<br />
-      
-    </template>
+    <template v-slot:two> Instructions:<br /> </template>
     <template v-slot:four>
       <br />
       <pre>{{ project }}</pre>

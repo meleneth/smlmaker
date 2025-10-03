@@ -2,7 +2,15 @@ import { reactive, computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import pako from 'pako'
 
-import type { NamespaceName, EventName, Machine, StateName, Project, Transition } from '@/types'
+import type {
+  NamespaceName,
+  EventName,
+  Machine,
+  StateName,
+  GuardName,
+  Project,
+  Transition,
+} from '@/types'
 
 export const useProjectStore = defineStore('project', () => {
   const project = ref<Project>({
@@ -20,6 +28,7 @@ export const useProjectStore = defineStore('project', () => {
       transitions: [],
       guards: [],
       context: false,
+      actions: [],
     })
     project.value.machines.push(new_machine)
     return new_machine
@@ -43,12 +52,36 @@ export const useProjectStore = defineStore('project', () => {
     machine.events.push(name)
   }
 
+  function removeEventFromMachine(eventToRemove: EventName, machine: Machine) {
+    machine.events = machine.events.filter((event) => event !== eventToRemove)
+  }
+
   function addStateToMachine(name: StateName, machine: Machine) {
     machine.states.push(name)
   }
 
+  function removeStateFromMachine(stateToRemove: StateName, machine: Machine) {
+    machine.events = machine.events.filter((state) => state !== stateToRemove)
+  }
+
+  function addActionToMachine(name: ActionName, machine: Machine) {
+    machine.actions.push(name)
+  }
+
+  function addActionToTransition(name: ActionName, transition: Transition) {
+    transition.actions.push(name)
+  }
+
   function addGuardToMachine(name: GuardName, machine: Machine) {
     machine.guards.push(name)
+  }
+
+  function addGuardToTransition(name: GuardName, transition: Transition) {
+    transition.guard = name
+  }
+
+  function removeGuardFromMachine(guardToRemove: GuardName, machine: Machine) {
+    machine.guards = machine.guards.filter((guard) => guard !== guardToRemove)
   }
 
   function addTransitionToMachine(
@@ -61,6 +94,7 @@ export const useProjectStore = defineStore('project', () => {
       event: event,
       start_state: startState,
       target_state: targetState,
+      actions: [],
     })
     machine.transitions.push(new_transition)
   }
@@ -139,5 +173,11 @@ export const useProjectStore = defineStore('project', () => {
     hydrateExport,
     removeMachine,
     removeNamespace,
+    addGuardToTransition,
+    addActionToTransition,
+    addActionToMachine,
+    removeEventFromMachine,
+    removeGuardFromMachine,
+    removeStateFromMachine,
   }
 })

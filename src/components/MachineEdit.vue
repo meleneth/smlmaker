@@ -2,9 +2,15 @@
 import type { Machine } from '@/types' // or '@/types.ts' if your setup requires the extension
 import { toRefs, ref } from 'vue'
 
+import SplitThreeOne from '@/components/SplitThreeOne.vue'
+import TransitionEdit from '@/components/TransitionEdit.vue'
+
 import SplitOneOneOne from '@/components/SplitOneOneOne.vue'
 import SplitOneOneOneOne from '@/components/SplitOneOneOneOne.vue'
 import FancyTextInput from '@/components/FancyTextInput.vue'
+
+import aTButton from '@/components/appTulsa/aTButton.vue'
+import aTInput from '@/components/appTulsa/aTInput.vue'
 
 import { useProjectStore } from '@/stores/project'
 const project_store = useProjectStore()
@@ -15,6 +21,7 @@ const project_store = useProjectStore()
 const eventToAdd = ref('')
 const stateToAdd = ref('')
 const guardToAdd = ref('')
+const actionToAdd = ref('')
 const new_transition_start_state = ref('')
 const new_transition_event = ref('')
 const new_transition_target_state = ref('')
@@ -41,6 +48,11 @@ function add_guard() {
   guardToAdd.value = ''
 }
 
+function add_action() {
+  project_store.addActionToMachine(actionToAdd.value, machine.value)
+  actionToAdd.value = ''
+}
+
 function add_transition() {
   project_store.addTransitionToMachine(
     new_transition_start_state.value,
@@ -54,34 +66,59 @@ function add_transition() {
 <template>
   <section class="p-4">
     <h2 class="text-xl font-bold">{{ machine.name }}</h2>
-    <!-- use props.machine.* as needed -->
   </section>
-  <SplitOneOneOne>
+  <SplitOneOneOneOne>
     <template v-slot:one>
-      <fancy-text-input v-model="eventToAdd" :handler="() => add_event()" id="event_to_add_input">
-        Add Event
-      </fancy-text-input>
-      <ul>
-        <li v-for="event in machine.events">{{ event }}</li>
-      </ul>
+      <aTInput v-model="stateToAdd" @keyup.enter="() => add_state()" id="state_to_add_input" />
     </template>
     <template v-slot:two>
-      <fancy-text-input v-model="stateToAdd" :handler="() => add_state()" id="state_to_add_input">
-        Add State
-      </fancy-text-input>
+      <aTButton :handler="() => add_state()"> Add State </aTButton>
+    </template>
+    <template v-slot:three>
+      <aTInput v-model="eventToAdd" @keyup.enter="() => add_event()" id="event_to_add_input" />
+    </template>
+    <template v-slot:four>
+      <aTButton :handler="() => add_event()"> Add Event </aTButton>
+    </template>
+  </SplitOneOneOneOne>
+  <SplitOneOneOneOne>
+    <template v-slot:one>
       <ul>
         <li v-for="state in machine.states">{{ state }}</li>
       </ul>
     </template>
     <template v-slot:three>
-      <fancy-text-input v-model="guardToAdd" :handler="() => add_guard()" id="guard_to_add_input">
-        Add Guard
-      </fancy-text-input>
+      <ul>
+        <li v-for="event in machine.events">{{ event }}</li>
+      </ul>
+    </template>
+  </SplitOneOneOneOne>
+  <SplitOneOneOneOne>
+    <template v-slot:one>
+      <aTInput v-model="guardToAdd" @keyup.enter="() => add_guard()" id="guard_to_add_input" />
+    </template>
+    <template v-slot:two>
+      <aTButton :handler="() => add_state()"> Add Guard </aTButton>
+    </template>
+    <template v-slot:three>
+      <aTInput v-model="actionToAdd" @keyup.enter="() => add_action()" id="action_to_add_input" />
+    </template>
+    <template v-slot:four>
+      <aTButton :handler="() => add_action()"> Add Action </aTButton>
+    </template>
+  </SplitOneOneOneOne>
+  <SplitOneOneOneOne>
+    <template v-slot:one>
       <ul>
         <li v-for="guard in machine.guards">{{ guard }}</li>
       </ul>
     </template>
-  </SplitOneOneOne>
+    <template v-slot:three>
+      <ul>
+        <li v-for="action in machine.actions">{{ action }}</li>
+      </ul>
+    </template>
+  </SplitOneOneOneOne>
   <SplitOneOneOneOne>
     <template v-slot:one>
       <select
@@ -114,16 +151,12 @@ function add_transition() {
       </select>
     </template>
     <template v-slot:four>
-      <button
-        @click="add_transition"
-        class="px-3 py-2 border rounded-md bg-red-500 text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-400 dark:focus:ring-red-600"
-      >
-        <span>»</span>
-        Add Transition
-      </button>
+      <aTButton :handler="() => add_transition()"> Add Transition </aTButton>
     </template>
   </SplitOneOneOneOne>
-  <ul>
-    <li v-for="transition in machine.transitions">{{ transition.start_state }} gets {{ transition.event }} and transitions to {{ transition.target_state }}</li>
-  </ul>
+  <TransitionEdit
+    v-for="transition in machine.transitions"
+    :transition="transition"
+    :machine="machine"
+  />
 </template>
