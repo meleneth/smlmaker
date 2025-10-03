@@ -14,3 +14,41 @@ be easier to create.
 # 0Th/yWIRN/kiEZexVGScxJHcmOtUeN9QxSK5W7u2IrGPyUj+3k1Iw9tHO/VBYT/DJ44kwRBsRiY2bZ
 # tKLErlOKx/IJWmTXicqLh9pvGdDO7l7O7gxHn/wj0ZjKfpO3mBOeG9HMUj9PQ0GK4CF2U06z4BcoQ9
 # Bl8MAAA=
+
+{
+  "name": "",
+  "namespaces": [
+    "someNamespace"
+  ],
+  "machines": [
+    {
+      "name": "aMachine",
+      "namespace": "someNamespace",
+      "events": [
+        "someEvent"
+      ],
+      "states": [
+        "someState",
+        "otherState"
+      ],
+      "transitions": [
+        {
+          "event": "someEvent",
+          "start_state": "someState",
+          "target_state": "otherState",
+          "actions": [
+            "anAction"
+          ],
+          "guard": "aGuard"
+        }
+      ],
+      "guards": [
+        "aGuard"
+      ],
+      "context": false,
+      "actions": [
+        "anAction"
+      ]
+    }
+  ]
+}

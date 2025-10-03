@@ -8,6 +8,7 @@ import type {
   Machine,
   StateName,
   GuardName,
+  ActionName,
   Project,
   Transition,
 } from '@/types'
@@ -89,7 +90,7 @@ export const useProjectStore = defineStore('project', () => {
     event: EventName,
     targetState: StateName,
     machine: Machine
-  ) {
+  ): Transition {
     const new_transition = reactive<Transition>({
       event: event,
       start_state: startState,
@@ -97,6 +98,7 @@ export const useProjectStore = defineStore('project', () => {
       actions: [],
     })
     machine.transitions.push(new_transition)
+    return new_transition
   }
 
   function generateExport(): string {
@@ -160,6 +162,21 @@ export const useProjectStore = defineStore('project', () => {
     return results
   })
 
+  const get_machine_header = computed(() => {
+    return (machine: Machine) => {
+      const lines = <string[]>[]
+      lines.push("#pragma once")
+      return lines.join('\n')
+    }
+  })
+
+  const get_machine_source = computed(() => {
+    return (machine: Machine) => {
+      const lines = <string[]>[]
+      return lines.join('\n')
+    }
+  })
+
   return {
     project,
     addMachine,
@@ -170,6 +187,8 @@ export const useProjectStore = defineStore('project', () => {
     addTransitionToMachine,
     machinesByNamespace,
     generateExport,
+    get_machine_header,
+    get_machine_source,
     hydrateExport,
     removeMachine,
     removeNamespace,

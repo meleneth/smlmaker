@@ -2,22 +2,15 @@
 import type { Machine } from '@/types' // or '@/types.ts' if your setup requires the extension
 import { toRefs, ref } from 'vue'
 
-import SplitThreeOne from '@/components/SplitThreeOne.vue'
 import TransitionEdit from '@/components/TransitionEdit.vue'
-
-import SplitOneOneOne from '@/components/SplitOneOneOne.vue'
 import SplitOneOneOneOne from '@/components/SplitOneOneOneOne.vue'
-import FancyTextInput from '@/components/FancyTextInput.vue'
-
 import aTButton from '@/components/appTulsa/aTButton.vue'
 import aTInput from '@/components/appTulsa/aTInput.vue'
+import ThingCard from '@/components/ThingCard.vue'
 
 import { useProjectStore } from '@/stores/project'
 const project_store = useProjectStore()
-//const { project } = storeToRefs(project_store)
-//import { storeToRefs } from 'pinia'
 
-//import type { Namespace, Event, Machine, Transition, State, Context, ContextEntry } from '@/types'
 const eventToAdd = ref('')
 const stateToAdd = ref('')
 const guardToAdd = ref('')
@@ -159,4 +152,16 @@ function add_transition() {
     :transition="transition"
     :machine="machine"
   />
+  <thing-card>
+    <template #label>file: {{ machine.name }}.hpp</template>
+    <template #default>
+      <pre>{{ project_store.get_machine_header(machine) }}</pre>
+    </template>
+  </thing-card>
+  <thing-card>
+    <template #label>file: {{ machine.name }}.cpp</template>
+    <template #default>
+      <pre>{{ project_store.get_machine_source(machine) }}</pre>
+    </template>
+  </thing-card>
 </template>
