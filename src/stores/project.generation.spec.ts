@@ -12,8 +12,8 @@ describe('project Store generation', () => {
 
   it('#get_machine_header', () => {
     const project_store = useProjectStore()
-    project_store.addNamespace('myNamespace')
-    const machine = project_store.addMachine('myMachine', 'myNamespace')
+    project_store.addNamespace('someNamespace')
+    const machine = project_store.addMachine('aMachine', 'someNamespace')
     project_store.addStateToMachine('someState', machine)
     project_store.addStateToMachine('otherState', machine)
     project_store.addStateToMachine('triState', machine)
@@ -27,30 +27,124 @@ describe('project Store generation', () => {
       'otherState',
       machine
     )
-    const expected_contents = `#pragma once`
+    const expected_contents = `#pragma once
+#include <memory>
+
+namespace someNamespace {
+
+class aMachine {
+public:
+  aMachine();
+  ~aMachine();
+
+  aMachine(aMachine&&) noexcept;
+  aMachine& operator=(aMachine&&) noexcept;
+
+  aMachine(const aMachine&) = delete;
+  aMachine& operator=(const aMachine&) = delete;
+
+  void someEvent();
+
+private:
+  struct Impl;
+  std::unique_ptr<Impl> impl;
+};
+
+} // namespace someNamespace
+`
 
     expect(project_store.get_machine_header(machine)).toEqual(expected_contents)
   })
 
   it('#get_machine_source', () => {
     const project_store = useProjectStore()
-    project_store.addNamespace('myNamespace')
-    const machine = project_store.addMachine('myMachine', 'myNamespace')
+    project_store.addNamespace('someNamespace')
+    const machine = project_store.addMachine('aMachine', 'someNamespace')
     project_store.addStateToMachine('someState', machine)
     project_store.addStateToMachine('otherState', machine)
     project_store.addStateToMachine('triState', machine)
     project_store.addEventToMachine('someEvent', machine)
-    project_store.addGuardToMachine('someGuard', machine)
-    project_store.addActionToMachine('someAction', machine)
-    project_store.addActionToMachine('otherAction', machine)
+    project_store.addGuardToMachine('aGuard', machine)
+    project_store.addActionToMachine('anAction', machine)
+
     const transition = project_store.addTransitionToMachine(
       'someState',
       'someEvent',
       'otherState',
       machine
     )
-    const expected_contents = ``
 
-    expect(project_store.get_machine_header(machine)).toEqual(expected_contents)
+    project_store.addGuardToTransition('aGuard', transition)
+    project_store.addActionToTransition('anAction', transition)
+
+    const expected_contents = `#include "aMachine.hpp"
+#include <boost/sml.hpp>
+#include <memory>
+#include <utility>
+
+namespace sml = boost::sml;
+
+namespace someNamespace {
+
+namespace { // TU-local internals (hidden from headers)
+
+// ---- events ----
+struct someEvent {};
+
+// ---- state tags ----
+struct someState {};
+struct otherState {};
+struct triState {};
+
+// ---- actions ----
+struct anAction {
+  void operator()(const someEvent&) const noexcept {
+    // TODO: side-effects for action "anAction"
+  }
+};
+
+// ---- guards ----
+struct aGuard {
+  bool operator()(const someEvent&) const noexcept {
+    // TODO: predicate for guard "aGuard"
+    return true;
+  }
+};
+
+// ---- transition table ----
+struct aMachineTable {
+  auto operator()() const {
+    using sml::event;
+    using sml::state;
+    using sml::make_transition_table;
+
+    return make_transition_table(
+      *state<someState> + event<someEvent> [aGuard{}] / anAction{} = state<otherState>
+    );
+  }
+};
+
+} // anonymous namespace
+
+// ---- PIMPL ----
+struct aMachine::Impl {
+  sml::sm<aMachineTable> sm;
+
+  void someEvent() { sm.process_event(someEvent{}); }
+};
+
+// ---- public API ----
+aMachine::aMachine() : impl(std::make_unique<Impl>()) {}
+aMachine::~aMachine() = default;
+
+aMachine::aMachine(aMachine&&) noexcept = default;
+aMachine& aMachine::operator=(aMachine&&) noexcept = default;
+
+void aMachine::someEvent() { impl->someEvent(); }
+
+} // namespace someNamespace
+`
+
+    expect(project_store.get_machine_source(machine)).toEqual(expected_contents)
   })
 })
