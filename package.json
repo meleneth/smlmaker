@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "prepare": "husky",
     "test": "vitest",
-    "type-check": "vue-tsc --build --force"
+    "type-check": "vue-tsc --build --force",
+    "coverage": "npx vitest run --coverage"
   },
   "dependencies": {
     "pako": "^2.1.0",
