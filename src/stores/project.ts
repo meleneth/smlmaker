@@ -182,7 +182,7 @@ export const useProjectStore = defineStore('project', () => {
       lines.push('')
       lines.push(`namespace ${ns} {`)
       lines.push('')
-   
+
       lines.push(`class ${cls} {`)
       lines.push('public:')
       lines.push(`  ${cls}();`)
