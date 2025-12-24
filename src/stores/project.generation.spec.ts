@@ -21,12 +21,7 @@ describe('project Store generation', () => {
     project_store.addGuardToMachine('someGuard', machine)
     project_store.addActionToMachine('someAction', machine)
     project_store.addActionToMachine('otherAction', machine)
-    const transition = project_store.addTransitionToMachine(
-      'someState',
-      'someEvent',
-      'otherState',
-      machine
-    )
+    project_store.addTransitionToMachine('someState', 'someEvent', 'otherState', machine)
     const expected_contents = `#pragma once
 #include <memory>
 
