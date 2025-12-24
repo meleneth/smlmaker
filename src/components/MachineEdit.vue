@@ -91,7 +91,7 @@ function add_transition() {
       <aTInput v-model="guardToAdd" @keyup.enter="() => add_guard()" id="guard_to_add_input" />
     </template>
     <template v-slot:two>
-      <aTButton :handler="() => add_state()"> Add Guard </aTButton>
+      <aTButton :handler="() => add_guard()"> Add Guard </aTButton>
     </template>
     <template v-slot:three>
       <aTInput v-model="actionToAdd" @keyup.enter="() => add_action()" id="action_to_add_input" />
