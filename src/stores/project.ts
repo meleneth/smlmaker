@@ -212,6 +212,84 @@ export const useProjectStore = defineStore('project', () => {
     }
   })
 
+  const get_machine_events_header = computed(() => {
+    const ident = (raw: string): string => {
+      let s = (raw ?? '').trim().replace(/[^a-zA-Z0-9_]/g, '_')
+      if (!s) s = '_'
+      if (/[0-9]/.test(s[0])) s = '_' + s
+      return s
+    }
+
+    const uniq = (arr: string[]) => {
+      const seen = new Set<string>()
+      const out: string[] = []
+      for (const x of arr)
+        if (!seen.has(x)) {
+          seen.add(x)
+          out.push(x)
+        }
+      return out
+    }
+
+    return (machine: Machine) => {
+      const ns = ident(machine.namespace || 'global')
+      const cls = ident(machine.name || 'StateMachine')
+      const events = uniq((machine.events || []).map(ident))
+
+      const lines: string[] = []
+      lines.push('#pragma once')
+      lines.push('#include <type_traits>')
+      lines.push('#include <utility>')
+      lines.push('')
+      lines.push('#include <eventpp/hetereventdispatcher.h>')
+      lines.push('')
+      lines.push(`namespace ${ns} {`)
+      lines.push('')
+
+      // ---- events ----
+      lines.push('// ---- events ----')
+      if (events.length === 0) {
+        lines.push('struct _NoopEvent {};')
+      } else {
+        for (const ev of events) lines.push(`struct ${ev} {};`)
+      }
+      lines.push('')
+
+      // ---- typed bus ----
+      lines.push('// ---- typed bus ----')
+      lines.push('// No runtime ids. Only types listed here can be emitted/listened to.')
+      lines.push('template <class... Es>')
+      lines.push('class TypedBus {')
+      lines.push('public:')
+      lines.push('  template <class E, class Fn>')
+      lines.push('  void on(Fn&& fn) {')
+      lines.push(
+        '    static_assert((std::is_same_v<E, Es> || ...), "Event type not registered in this bus");'
+      )
+      lines.push('    dispatcher_.template appendListener<E>(std::forward<Fn>(fn));')
+      lines.push('  }')
+      lines.push('')
+      lines.push('  template <class E>')
+      lines.push('  void emit(const E& ev) {')
+      lines.push(
+        '    static_assert((std::is_same_v<E, Es> || ...), "Event type not registered in this bus");'
+      )
+      lines.push('    dispatcher_.template dispatch<E>(ev);')
+      lines.push('  }')
+      lines.push('')
+      lines.push('private:')
+      // note: dispatcher signature is void(const Es&)...
+      lines.push('  eventpp::HeterEventDispatcher<void(const Es&)...> dispatcher_;')
+      lines.push('};')
+      lines.push('')
+      lines.push(`using ${cls}Bus = TypedBus<${events.length ? events.join(', ') : '_NoopEvent'}>;`)
+      lines.push('')
+      lines.push(`} // namespace ${ns}`)
+      lines.push('')
+      return lines.join('\n')
+    }
+  })
+
   const get_machine_source = computed(() => {
     // sanitize raw strings into valid C++ identifiers
     const ident = (raw: string): string => {
@@ -447,6 +525,7 @@ export const useProjectStore = defineStore('project', () => {
     generateExport,
     get_machine_header,
     get_machine_source,
+    get_machine_events_header,
     hydrateExport,
     removeMachine,
     removeNamespace,

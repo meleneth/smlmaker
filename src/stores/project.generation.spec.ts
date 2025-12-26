@@ -10,6 +10,62 @@ describe('project Store generation', () => {
     setActivePinia(createPinia())
   })
 
+  it('#get_machine_events_header_typed_bus_no_id', () => {
+    const project_store = useProjectStore()
+    project_store.addNamespace('someNamespace')
+    const machine = project_store.addMachine('aMachine', 'someNamespace')
+    project_store.addEventToMachine('someEvent', machine)
+
+    expect(project_store.get_machine_events_header(machine)).toContain('HeterEventDispatcher')
+    expect(project_store.get_machine_events_header(machine)).toContain('static_assert')
+  })
+
+  it('#get_machine_events_header (typed bus, no id)', () => {
+    const project_store = useProjectStore()
+    project_store.addNamespace('someNamespace')
+    const machine = project_store.addMachine('aMachine', 'someNamespace')
+    project_store.addEventToMachine('someEvent', machine)
+
+    const expected_contents = `#pragma once
+#include <type_traits>
+#include <utility>
+
+#include <eventpp/hetereventdispatcher.h>
+
+namespace someNamespace {
+
+// ---- events ----
+struct someEvent {};
+
+// ---- typed bus ----
+// No runtime ids. Only types listed here can be emitted/listened to.
+template <class... Es>
+class TypedBus {
+public:
+  template <class E, class Fn>
+  void on(Fn&& fn) {
+    static_assert((std::is_same_v<E, Es> || ...), "Event type not registered in this bus");
+    dispatcher_.template appendListener<E>(std::forward<Fn>(fn));
+  }
+
+  template <class E>
+  void emit(const E& ev) {
+    static_assert((std::is_same_v<E, Es> || ...), "Event type not registered in this bus");
+    dispatcher_.template dispatch<E>(ev);
+  }
+
+private:
+  eventpp::HeterEventDispatcher<void(const Es&)...> dispatcher_;
+};
+
+using aMachineBus = TypedBus<someEvent>;
+
+} // namespace someNamespace
+`
+
+    expect(project_store.get_machine_events_header(machine)).toEqual(expected_contents)
+  })
+
   it('#get_machine_header', () => {
     const project_store = useProjectStore()
     project_store.addNamespace('someNamespace')

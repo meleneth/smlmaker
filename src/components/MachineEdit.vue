@@ -152,6 +152,12 @@ function add_transition() {
     :transition="transition"
     :machine="machine"
   />
+   <thing-card>
+    <template #label>file: {{ machine.name }}_events.hpp</template>
+    <template #default>
+      <pre>{{ project_store.get_machine_events_header(machine) }}</pre>
+    </template>
+  </thing-card>
   <thing-card>
     <template #label>file: {{ machine.name }}.hpp</template>
     <template #default>
