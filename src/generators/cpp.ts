@@ -217,6 +217,7 @@ function selectedContext(machine: Machine, types: CppType[]) {
       name: `::${namespace}::${name}`,
       definition: '',
       include: `#include "${namespace}/${name}.hpp"\n`,
+      requiresArgument: shared.kind === 'context' && shared.fields.length > 0,
     }
   }
   if (machine.context) {
@@ -230,6 +231,7 @@ function selectedContext(machine: Machine, types: CppType[]) {
         })
         .join('\n')}\n};\n\n`,
       include: '',
+      requiresArgument: false,
     }
   }
   return undefined
@@ -251,6 +253,43 @@ export function generateTypeHeader(type: CppType): string {
       return `  ${field.type.trim()} ${cppIdentifier(field.name)}${initializer};`
     })
     .join('\n')
+
+  if (type.kind === 'context') {
+    const parameters = type.fields
+      .map((field) => `${field.type.trim()}& ${cppIdentifier(field.name)}`)
+      .join(', ')
+    const initializers = type.fields
+      .map((field) => `${cppIdentifier(field.name)}_{&${cppIdentifier(field.name)}}`)
+      .join(', ')
+    const accessors = type.fields
+      .map(
+        (field) =>
+          `  ${field.type.trim()}& ${cppIdentifier(field.name)}() const { return *${cppIdentifier(field.name)}_; }`
+      )
+      .join('\n')
+    const pointers = type.fields
+      .map((field) => `  ${field.type.trim()}* ${cppIdentifier(field.name)}_{};`)
+      .join('\n')
+    const constructor = type.fields.length
+      ? `  ${name}(${parameters}) : ${initializers} {}`
+      : `  ${name}() = default;`
+
+    return `#pragma once
+${includes ? `${includes}\n` : ''}
+namespace ${ns} {
+
+struct ${name} {
+${constructor}
+
+${accessors}
+
+private:
+${pointers}
+};
+
+} // namespace ${ns}
+`
+  }
 
   return `#pragma once
 ${includes ? `${includes}\n` : ''}
@@ -331,7 +370,9 @@ export function generateMachineHeader(
   const cls = cppIdentifier(machine.name, 'StateMachine')
   const events = eventNames(machine)
   const context = selectedContext(machine, types)
-  const ctor = context ? `  ${cls}();\n  explicit ${cls}(${context.name} context);` : `  ${cls}();`
+  const ctor = context
+    ? `${context.requiresArgument ? '' : `  ${cls}();\n`}  explicit ${cls}(${context.name} context);`
+    : `  ${cls}();`
   const contextAccessors = context
     ? `\n  ${context.name}& context() noexcept;\n  const ${context.name}& context() const noexcept;`
     : ''
@@ -471,7 +512,7 @@ export function generateMachineSource(machine: Machine, types: CppType[] = []): 
     ? `  explicit Impl(${contextName} initial_context)\n    : context(std::move(initial_context)), sm{context} {\n${listenerSetup}\n  }`
     : `  Impl() {\n${listenerSetup}\n  }`
   const publicCtor = context
-    ? `${cls}::${cls}() : ${cls}(${contextName}{}) {}\n${cls}::${cls}(${contextName} context) : impl_(std::make_unique<Impl>(std::move(context))) {}`
+    ? `${context.requiresArgument ? '' : `${cls}::${cls}() : ${cls}(${contextName}{}) {}\n`}${cls}::${cls}(${contextName} context) : impl_(std::make_unique<Impl>(std::move(context))) {}`
     : `${cls}::${cls}() : impl_(std::make_unique<Impl>()) {}`
   const contextMethods = context
     ? `\n${contextName}& ${cls}::context() noexcept { return impl_->context; }\nconst ${contextName}& ${cls}::context() const noexcept { return impl_->context; }`

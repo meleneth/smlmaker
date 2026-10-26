@@ -1,19 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
-import LibraryEditor from '@/components/LibraryEditor.vue'
 import TestTargetEditor from '@/components/TestTargetEditor.vue'
 import AtButton from '@/components/appTulsa/AtButton.vue'
+import AtCheckbox from '@/components/appTulsa/AtCheckbox.vue'
 import AtField from '@/components/appTulsa/AtField.vue'
 import AtPanel from '@/components/appTulsa/AtPanel.vue'
 import AtSelect from '@/components/appTulsa/AtSelect.vue'
 import AtTextarea from '@/components/appTulsa/AtTextarea.vue'
 import { useProjectStore } from '@/stores/project'
-import type { CompilationUnitKind, LibraryKind } from '@/types'
+import { OPTIONAL_DEPENDENCIES } from '@/generators/project'
+import type { CompilationUnitKind, LibraryTarget, OptionalDependency } from '@/types'
 
 const store = useProjectStore()
-const libraryName = ref('')
-const libraryKind = ref<LibraryKind>('STATIC')
 const testTargetName = ref('')
 const unitPath = ref('')
 const unitKind = ref<CompilationUnitKind>('source')
@@ -30,15 +29,10 @@ const cxxStandard = computed({
   },
 })
 
-const libraryKinds = ['STATIC', 'SHARED', 'OBJECT'].map((value) => ({ label: value, value }))
 const unitKinds = [
   { label: 'Library source', value: 'source' },
   { label: 'Catch2 test', value: 'test' },
 ]
-
-function addLibrary() {
-  if (store.addLibrary(libraryName.value, libraryKind.value)) libraryName.value = ''
-}
 
 function addTestTarget() {
   if (store.addTestTarget(testTargetName.value)) testTargetName.value = ''
@@ -46,6 +40,17 @@ function addTestTarget() {
 
 function addUnit() {
   if (store.addCompilationUnit(unitPath.value, unitKind.value)) unitPath.value = ''
+}
+
+function dependencyDisabled(library: LibraryTarget, dependency: OptionalDependency): boolean {
+  if (library.dependencies.includes(dependency)) return false
+  if (dependency === 'sdl2') {
+    return Boolean(store.project.libraries?.some((target) => target.dependencies.includes('sdl3')))
+  }
+  if (dependency === 'sdl3') {
+    return Boolean(store.project.libraries?.some((target) => target.dependencies.includes('sdl2')))
+  }
+  return false
 }
 </script>
 
@@ -105,25 +110,25 @@ function addUnit() {
     </AtPanel>
 
     <AtPanel
-      title="Libraries"
-      description="Each source compilation unit belongs to exactly one generated library."
+      v-if="store.project.libraries?.length"
+      title="Optional libraries"
+      description="Select the third-party libraries each generated target should link."
     >
-      <div class="grid items-end gap-3 md:grid-cols-[1fr_12rem_auto]">
-        <AtField id="new-library-name" v-model="libraryName" label="Target name" />
-        <AtSelect
-          id="new-library-kind"
-          v-model="libraryKind"
-          label="Kind"
-          :options="libraryKinds"
-        />
-        <AtButton @click="addLibrary">Add library</AtButton>
+      <div v-for="library in store.project.libraries" :key="library.name" class="space-y-3">
+        <h3 class="font-semibold text-gray-900 dark:text-white">{{ library.name }}</h3>
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          <AtCheckbox
+            v-for="dependency in OPTIONAL_DEPENDENCIES"
+            :id="`build-${library.name}-dependency-${dependency.id}`"
+            :key="dependency.id"
+            :label="dependency.label"
+            :disabled="dependencyDisabled(library, dependency.id)"
+            :model-value="library.dependencies.includes(dependency.id)"
+            @update:model-value="store.toggleLibraryDependency(library, dependency.id, $event)"
+          />
+        </div>
       </div>
     </AtPanel>
-    <LibraryEditor
-      v-for="library in store.project.libraries"
-      :key="library.name"
-      :library="library"
-    />
 
     <AtPanel
       title="Catch2 targets"

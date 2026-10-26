@@ -29,6 +29,21 @@ export interface CppType {
   namespace: NamespaceName
   fields: ContextEntry[]
   includes: string[]
+  kind?: 'value' | 'context'
+}
+
+export interface EventHandlerTarget {
+  machine_namespace: NamespaceName
+  machine_name: MachineName
+  machine_event: EventName
+}
+
+export interface EventDefinition {
+  name: string
+  namespace: NamespaceName
+  fields: ContextEntry[]
+  includes: string[]
+  handlers: EventHandlerTarget[]
 }
 
 export type CompilationUnitKind = 'source' | 'test'
@@ -83,6 +98,7 @@ export interface Project {
   version?: string
   cxx_standard?: 17 | 20 | 23
   types?: CppType[]
+  events?: EventDefinition[]
   compilation_units?: CompilationUnit[]
   libraries?: LibraryTarget[]
   test_targets?: TestTarget[]

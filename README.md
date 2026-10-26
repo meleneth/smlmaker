@@ -22,7 +22,10 @@ smlmaker.project.json
 CMakeLists.txt
 cmake/CPM.cmake
 src/
+  events.hpp
+  event_handlers.hpp
   <library>_fwd.hpp
+  <namespace>/<Event>.hpp
   <namespace>/<Machine>_events.hpp
   <namespace>/<Machine>.hpp
   <namespace>/<Machine>.cpp
@@ -31,8 +34,8 @@ tests/
   <namespace>/<Machine>Tests.cpp
 ```
 
-The JSON file is an importable copy of the entire SMLmaker project definition. The Build screen
-defines static, shared, or object libraries and assigns every source compilation unit and
+The JSON file is an importable copy of the entire SMLmaker project definition. The Libraries
+screen defines static, shared, or object libraries and assigns every source compilation unit and
 reusable type to its owning library. SMLmaker emits one forward-declaration header per library;
 machine interfaces include it while concrete headers stay in implementation files wherever
 possible. Catch2 executables are independently configurable and registered with CTest.
@@ -44,10 +47,21 @@ Reusable C++ types make context-heavy designs straightforward: define a namespac
 fields once, assign it to a library, then select it as the context for any machine. Inline
 machine-specific contexts remain available.
 
+The Events screen defines the project-level typed messages carried by eventpp independently from
+the transition events that drive individual state machines. An eventpp event can optionally be
+connected to one or more machine events; `event_handlers.hpp` provides an RAII adapter that owns
+those subscriptions and forwards each message to the selected machine method.
+
+Reusable types can be ordinary value types or borrowed context objects. Context objects follow
+the Fairlanes capability pattern: constructor references are stored as raw pointers and exposed
+through reference-returning accessors. Machines using a non-empty context object require that
+context at construction instead of attempting to default-construct borrowed dependencies.
+
 Generated projects use CPM.cmake to acquire Boost-ext.SML, eventpp, Catch2, and selected optional
-source dependencies. Per-library checkboxes support FTXUI, GLM, SDL2, SDL3, Dear ImGui, Qt 6,
-and GTK 4. SDL2 and SDL3 are mutually exclusive across the project. Qt and GTK are discovered as
-system frameworks (`find_package`/pkg-config); the other dependencies are acquired by CPM.
+source dependencies. The Build screen's per-library checkboxes support FTXUI, GLM, SDL2, SDL3,
+Dear ImGui, Qt 6, and GTK 4. SDL2 and SDL3 are mutually exclusive across the project. Qt and GTK
+are discovered as system frameworks (`find_package`/pkg-config); the other dependencies are
+acquired by CPM.
 
 ## Development
 

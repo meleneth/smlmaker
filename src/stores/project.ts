@@ -18,11 +18,14 @@ import {
   machineTestPath,
   projectBuildValidationErrors,
 } from '@/generators/project'
+import { eventKey } from '@/generators/events'
 import type {
   ActionName,
   CompilationUnit,
   ContextEntry,
   CppType,
+  EventDefinition,
+  EventHandlerTarget,
   EventName,
   GuardName,
   Machine,
@@ -63,6 +66,15 @@ function normalizeProject(project: Project): Project {
   project.version ??= '0.1.0'
   project.cxx_standard ??= 17
   project.types ??= []
+  project.types.forEach((type) => {
+    type.kind ??= 'value'
+  })
+  project.events ??= []
+  project.events.forEach((event) => {
+    event.fields ??= []
+    event.includes ??= []
+    event.handlers ??= []
+  })
   project.compilation_units ??= []
   project.libraries ??= []
   project.libraries.forEach((library) => {
@@ -81,6 +93,7 @@ export const useProjectStore = defineStore('project', () => {
     version: '0.1.0',
     cxx_standard: 17,
     types: [],
+    events: [],
     compilation_units: [],
     libraries: [],
     test_targets: [],
@@ -88,28 +101,6 @@ export const useProjectStore = defineStore('project', () => {
 
   function setProjectName(name: string) {
     project.value.name = name.trim()
-  }
-
-  function ensureDefaultTargets(): { library: LibraryTarget; tests: TestTarget } {
-    project.value.libraries ??= []
-    project.value.test_targets ??= []
-    let library = project.value.libraries[0]
-    if (!library) {
-      library = {
-        name: 'machines',
-        kind: 'STATIC',
-        compilation_units: [],
-        types: [],
-        dependencies: [],
-      }
-      project.value.libraries.push(library)
-    }
-    let tests = project.value.test_targets[0]
-    if (!tests) {
-      tests = { name: 'machine_tests', compilation_units: [], libraries: [library.name] }
-      project.value.test_targets.push(tests)
-    }
-    return { library, tests }
   }
 
   function addMachine(name: string, namespace: string): Machine {
@@ -126,9 +117,6 @@ export const useProjectStore = defineStore('project', () => {
       guard_code: {},
     })
     project.value.machines.push(machine)
-    const targets = ensureDefaultTargets()
-    targets.library.compilation_units.push(machineSourcePath(machine))
-    targets.tests.compilation_units.push(machineTestPath(machine))
     return machine
   }
 
@@ -140,6 +128,13 @@ export const useProjectStore = defineStore('project', () => {
     const sourcePath = machineSourcePath(machineToRemove)
     const testPath = machineTestPath(machineToRemove)
     project.value.machines = project.value.machines.filter((machine) => machine !== machineToRemove)
+    project.value.events?.forEach((event) => {
+      event.handlers = event.handlers.filter(
+        (handler) =>
+          handler.machine_namespace !== machineToRemove.namespace ||
+          handler.machine_name !== machineToRemove.name
+      )
+    })
     project.value.libraries?.forEach((library) => {
       library.compilation_units = library.compilation_units.filter((path) => path !== sourcePath)
     })
@@ -153,6 +148,9 @@ export const useProjectStore = defineStore('project', () => {
       (machine) => machine.namespace === namespaceToRemove
     )
     machines.forEach(removeMachine)
+    project.value.events = (project.value.events ?? []).filter(
+      (event) => event.namespace !== namespaceToRemove
+    )
     project.value.namespaces = project.value.namespaces.filter((item) => item !== namespaceToRemove)
   }
 
@@ -165,6 +163,14 @@ export const useProjectStore = defineStore('project', () => {
     machine.transitions = machine.transitions.filter(
       (transition) => transition.event !== eventToRemove
     )
+    project.value.events?.forEach((event) => {
+      event.handlers = event.handlers.filter(
+        (handler) =>
+          handler.machine_namespace !== machine.namespace ||
+          handler.machine_name !== machine.name ||
+          handler.machine_event !== eventToRemove
+      )
+    })
   }
 
   function addStateToMachine(name: StateName, machine: Machine): boolean {
@@ -294,12 +300,17 @@ export const useProjectStore = defineStore('project', () => {
     if (typeKey) machine.context = false
   }
 
-  function addType(name: string, namespace: string): CppType | undefined {
+  function addType(
+    name: string,
+    namespace: string,
+    kind: CppType['kind'] = 'value'
+  ): CppType | undefined {
     const candidate: CppType = {
       name: name.trim(),
       namespace: namespace.trim(),
       fields: [],
       includes: [],
+      kind,
     }
     project.value.types ??= []
     if (!candidate.name || !candidate.namespace) return undefined
@@ -307,8 +318,74 @@ export const useProjectStore = defineStore('project', () => {
       return undefined
     }
     project.value.types.push(candidate)
-    if (project.value.libraries?.[0]) project.value.libraries[0].types.push(cppTypeKey(candidate))
     return candidate
+  }
+
+  function addEvent(name: string, namespace: string): EventDefinition | undefined {
+    const candidate: EventDefinition = {
+      name: name.trim(),
+      namespace: namespace.trim(),
+      fields: [],
+      includes: [],
+      handlers: [],
+    }
+    project.value.events ??= []
+    if (!candidate.name || !candidate.namespace) return undefined
+    if (project.value.events.some((event) => eventKey(event) === eventKey(candidate))) {
+      return undefined
+    }
+    project.value.events.push(candidate)
+    return candidate
+  }
+
+  function removeEvent(eventToRemove: EventDefinition) {
+    project.value.events = (project.value.events ?? []).filter((event) => event !== eventToRemove)
+  }
+
+  function addFieldToEvent(event: EventDefinition, entry: ContextEntry): boolean {
+    if (!entry.name.trim() || !entry.type.trim()) return false
+    if (event.fields.some((field) => field.name === entry.name.trim())) return false
+    event.fields.push({
+      name: entry.name.trim(),
+      type: entry.type.trim(),
+      value: entry.value.trim(),
+    })
+    return true
+  }
+
+  function removeFieldFromEvent(event: EventDefinition, entry: ContextEntry) {
+    event.fields = event.fields.filter((field) => field !== entry)
+  }
+
+  function setEventIncludes(event: EventDefinition, includes: string) {
+    event.includes = includes
+      .split(',')
+      .map((include) => include.trim())
+      .filter(Boolean)
+  }
+
+  function addEventHandler(event: EventDefinition, handler: EventHandlerTarget): boolean {
+    const machine = project.value.machines.find(
+      (candidate) =>
+        candidate.namespace === handler.machine_namespace && candidate.name === handler.machine_name
+    )
+    if (!machine?.events.includes(handler.machine_event)) return false
+    if (
+      event.handlers.some(
+        (candidate) =>
+          candidate.machine_namespace === handler.machine_namespace &&
+          candidate.machine_name === handler.machine_name &&
+          candidate.machine_event === handler.machine_event
+      )
+    ) {
+      return false
+    }
+    event.handlers.push({ ...handler })
+    return true
+  }
+
+  function removeEventHandler(event: EventDefinition, handler: EventHandlerTarget) {
+    event.handlers = event.handlers.filter((candidate) => candidate !== handler)
   }
 
   function removeType(typeToRemove: CppType) {
@@ -412,10 +489,32 @@ export const useProjectStore = defineStore('project', () => {
       : library.compilation_units.filter((item) => item !== path)
   }
 
+  function assignLibraryUnit(library: LibraryTarget, path: string) {
+    project.value.libraries?.forEach((target) => {
+      target.compilation_units = target.compilation_units.filter((item) => item !== path)
+    })
+    library.compilation_units.push(path)
+  }
+
+  function unassignLibraryUnit(library: LibraryTarget, path: string) {
+    library.compilation_units = library.compilation_units.filter((item) => item !== path)
+  }
+
   function toggleLibraryType(library: LibraryTarget, type: string, selected: boolean) {
     library.types = selected
       ? [...new Set([...library.types, type])]
       : library.types.filter((item) => item !== type)
+  }
+
+  function assignLibraryType(library: LibraryTarget, type: string) {
+    project.value.libraries?.forEach((target) => {
+      target.types = target.types.filter((item) => item !== type)
+    })
+    library.types.push(type)
+  }
+
+  function unassignLibraryType(library: LibraryTarget, type: string) {
+    library.types = library.types.filter((item) => item !== type)
   }
 
   function toggleLibraryDependency(
@@ -524,6 +623,18 @@ export const useProjectStore = defineStore('project', () => {
   const source_compilation_units = computed(() =>
     compilation_units.value.filter((unit) => unit.kind === 'source')
   )
+  const unassigned_source_compilation_units = computed(() =>
+    source_compilation_units.value.filter(
+      (unit) =>
+        !project.value.libraries?.some((library) => library.compilation_units.includes(unit.path))
+    )
+  )
+  const unassigned_types = computed(() =>
+    (project.value.types ?? []).filter((type) => {
+      const key = cppTypeKey(type)
+      return !project.value.libraries?.some((library) => library.types.includes(key))
+    })
+  )
   const test_compilation_units = computed(() =>
     compilation_units.value.filter((unit) => unit.kind === 'test')
   )
@@ -565,12 +676,23 @@ export const useProjectStore = defineStore('project', () => {
     addFieldToType,
     removeFieldFromType,
     setTypeIncludes,
+    addEvent,
+    removeEvent,
+    addFieldToEvent,
+    removeFieldFromEvent,
+    setEventIncludes,
+    addEventHandler,
+    removeEventHandler,
     addCompilationUnit,
     removeCompilationUnit,
     addLibrary,
     removeLibrary,
     toggleLibraryUnit,
+    assignLibraryUnit,
+    unassignLibraryUnit,
     toggleLibraryType,
+    assignLibraryType,
+    unassignLibraryType,
     toggleLibraryDependency,
     addTestTarget,
     removeTestTarget,
@@ -586,6 +708,8 @@ export const useProjectStore = defineStore('project', () => {
     validate_machine,
     compilation_units,
     source_compilation_units,
+    unassigned_source_compilation_units,
+    unassigned_types,
     test_compilation_units,
     get_cmake,
     get_project_files,

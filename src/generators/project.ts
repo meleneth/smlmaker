@@ -5,6 +5,12 @@ import {
   generateMachineHeader,
   generateTypeHeader,
 } from '@/generators/cpp'
+import {
+  eventHeaderPath,
+  generateEventBusHeader,
+  generateEventHeader,
+  generateEventHandlersHeader,
+} from '@/generators/events'
 import type {
   CompilationUnit,
   GeneratedFile,
@@ -136,6 +142,7 @@ export function projectBuildValidationErrors(project: Project): string[] {
   const testTargets = project.test_targets ?? []
   const customUnits = project.compilation_units ?? []
   const types = project.types ?? []
+  const events = project.events ?? []
   const dependencies = libraries.flatMap((library) => library.dependencies ?? [])
   const sourcePaths = new Set([
     ...project.machines.map(machineSourcePath),
@@ -153,6 +160,29 @@ export function projectBuildValidationErrors(project: Project): string[] {
   }
   if (new Set(libraries.map((library) => cppIdentifier(library.name))).size !== libraries.length) {
     errors.push('Library target names must produce unique C++ identifiers.')
+  }
+  const eventIdentifiers = events.map(
+    (event) => `${cppIdentifier(event.namespace, 'global')}::${cppIdentifier(event.name, 'Event')}`
+  )
+  if (new Set(eventIdentifiers).size !== eventIdentifiers.length) {
+    errors.push('eventpp event names must produce unique qualified C++ identifiers.')
+  }
+  for (const event of events) {
+    if (!event.name.trim() || !event.namespace.trim()) {
+      errors.push('eventpp events require both a namespace and a name.')
+    }
+    for (const handler of event.handlers ?? []) {
+      const machine = project.machines.find(
+        (candidate) =>
+          candidate.namespace === handler.machine_namespace &&
+          candidate.name === handler.machine_name
+      )
+      if (!machine?.events.includes(handler.machine_event)) {
+        errors.push(
+          `eventpp handler ${event.namespace}::${event.name} references unknown machine event ${handler.machine_namespace}::${handler.machine_name}.${handler.machine_event}.`
+        )
+      }
+    }
   }
   for (const library of libraries) {
     if (!library.name.trim()) errors.push('Library target names cannot be blank.')
@@ -341,9 +371,21 @@ export function generateLibraryForwardHeader(project: Project, library: LibraryT
   return lines.join('\n')
 }
 
-export function generateMachineTest(machine: Machine): string {
+export function generateMachineTest(machine: Machine, types: Project['types'] = []): string {
   const ns = cppIdentifier(machine.namespace, 'global')
   const cls = cppIdentifier(machine.name, 'StateMachine')
+  const context = types?.find((type) => cppTypeKey(type) === machine.context_type)
+  if (context?.kind === 'context' && context.fields.length) {
+    return `#include <catch2/catch_test_macros.hpp>
+#include <type_traits>
+
+#include "${ns}/${cls}.hpp"
+
+TEST_CASE("${cls} requires its borrowed context", "[${cls}]") {
+  STATIC_REQUIRE(!std::is_default_constructible_v<${ns}::${cls}>);
+}
+`
+  }
   return `#include <catch2/catch_test_macros.hpp>
 
 #include "${ns}/${cls}.hpp"
@@ -356,6 +398,7 @@ TEST_CASE("${cls} can be constructed", "[${cls}]") {
 
 export function generateProjectFiles(project: Project): GeneratedFile[] {
   const types = project.types ?? []
+  const events = project.events ?? []
   const files: GeneratedFile[] = [
     { name: 'smlmaker.project.json', contents: `${JSON.stringify(project, null, 2)}\n` },
     { name: 'CMakeLists.txt', contents: generateCMakeLists(project) },
@@ -374,6 +417,15 @@ export function generateProjectFiles(project: Project): GeneratedFile[] {
     const name = cppIdentifier(type.name, 'Context')
     files.push({ name: `src/${ns}/${name}.hpp`, contents: generateTypeHeader(type) })
   }
+  if (events.length) {
+    files.push({ name: 'src/events.hpp', contents: generateEventBusHeader(project.name, events) })
+    for (const event of events) {
+      files.push({ name: eventHeaderPath(event), contents: generateEventHeader(event) })
+    }
+    if (events.some((event) => event.handlers?.length)) {
+      files.push({ name: 'src/event_handlers.hpp', contents: generateEventHandlersHeader(project) })
+    }
+  }
   for (const machine of project.machines) {
     const directory = `src/${cppIdentifier(machine.namespace, 'global')}`
     const owner = project.libraries?.find((library) =>
@@ -388,7 +440,7 @@ export function generateProjectFiles(project: Project): GeneratedFile[] {
     for (const file of machineFiles) {
       files.push({ name: `${directory}/${file.name}`, contents: file.contents })
     }
-    files.push({ name: machineTestPath(machine), contents: generateMachineTest(machine) })
+    files.push({ name: machineTestPath(machine), contents: generateMachineTest(machine, types) })
   }
   for (const unit of project.compilation_units ?? []) {
     files.push({ name: unit.path, contents: unit.content })

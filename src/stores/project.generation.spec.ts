@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 
 import { useProjectStore } from './project'
+import { generateTypeHeader } from '@/generators/cpp'
 
 describe('C++ generation', () => {
   beforeEach(() => setActivePinia(createPinia()))
@@ -113,5 +114,23 @@ describe('C++ generation', () => {
     const source = store.get_machine_source(machine)
     expect(source).toContain('struct InitialStateMarkerEvent {};')
     expect(source).toContain('*state<Waiting> + event<InitialStateMarkerEvent> = state<Waiting>')
+  })
+
+  it('generates borrowed context objects with raw pointers and reference accessors', () => {
+    const header = generateTypeHeader({
+      name: 'PartyCtx',
+      namespace: 'game',
+      kind: 'context',
+      includes: [],
+      fields: [
+        { name: 'registry', type: 'Registry', value: '' },
+        { name: 'log', type: 'Log', value: '' },
+      ],
+    })
+
+    expect(header).toContain('PartyCtx(Registry& registry, Log& log)')
+    expect(header).toContain('registry_{&registry}')
+    expect(header).toContain('Registry& registry() const { return *registry_; }')
+    expect(header).toContain('Registry* registry_{};')
   })
 })

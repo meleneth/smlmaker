@@ -30,7 +30,7 @@ const validationErrors = computed(() => projectStore.validate_machine(machine.va
 const contextOptions = computed(() => [
   { label: 'No shared context', value: '' },
   ...(projectStore.project.types ?? []).map((type) => ({
-    label: `${type.namespace}::${type.name}`,
+    label: `${type.namespace}::${type.name}${type.kind === 'context' ? ' (context)' : ' (value)'}`,
     value: `${type.namespace}::${type.name}`,
   })),
 ])
