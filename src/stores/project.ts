@@ -1,88 +1,239 @@
-import { reactive, computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
 import pako from 'pako'
 
+import {
+  cppTypeKey,
+  generateEventsHeader,
+  generateMachineFiles,
+  generateMachineHeader,
+  generateMachineSource,
+  machineValidationErrors,
+} from '@/generators/cpp'
+import {
+  allCompilationUnits,
+  generateCMakeLists,
+  generateProjectFiles,
+  machineSourcePath,
+  machineTestPath,
+  projectBuildValidationErrors,
+} from '@/generators/project'
 import type {
-  NamespaceName,
-  EventName,
-  Machine,
-  StateName,
-  GuardName,
   ActionName,
+  CompilationUnit,
+  ContextEntry,
+  CppType,
+  EventName,
+  GuardName,
+  Machine,
+  LibraryKind,
+  LibraryTarget,
+  OptionalDependency,
+  NamespaceName,
   Project,
+  StateName,
+  TestTarget,
   Transition,
 } from '@/types'
+
+function nonBlankUniquePush(values: string[], raw: string): boolean {
+  const value = raw.trim()
+  if (!value || values.includes(value)) return false
+  values.push(value)
+  return true
+}
+
+function normalizeMachine(machine: Machine): Machine {
+  machine.events ??= []
+  machine.states ??= []
+  machine.transitions ??= []
+  machine.guards ??= []
+  machine.actions ??= []
+  machine.context ??= false
+  machine.action_code ??= {}
+  machine.guard_code ??= {}
+  for (const transition of machine.transitions) transition.actions ??= []
+  return machine
+}
+
+function normalizeProject(project: Project): Project {
+  project.name ??= ''
+  project.namespaces ??= []
+  project.machines = (project.machines ?? []).map(normalizeMachine)
+  project.version ??= '0.1.0'
+  project.cxx_standard ??= 17
+  project.types ??= []
+  project.compilation_units ??= []
+  project.libraries ??= []
+  project.libraries.forEach((library) => {
+    library.types ??= []
+    library.dependencies ??= []
+  })
+  project.test_targets ??= []
+  return project
+}
 
 export const useProjectStore = defineStore('project', () => {
   const project = ref<Project>({
     name: '',
     namespaces: [],
     machines: [],
+    version: '0.1.0',
+    cxx_standard: 17,
+    types: [],
+    compilation_units: [],
+    libraries: [],
+    test_targets: [],
   })
 
+  function setProjectName(name: string) {
+    project.value.name = name.trim()
+  }
+
+  function ensureDefaultTargets(): { library: LibraryTarget; tests: TestTarget } {
+    project.value.libraries ??= []
+    project.value.test_targets ??= []
+    let library = project.value.libraries[0]
+    if (!library) {
+      library = {
+        name: 'machines',
+        kind: 'STATIC',
+        compilation_units: [],
+        types: [],
+        dependencies: [],
+      }
+      project.value.libraries.push(library)
+    }
+    let tests = project.value.test_targets[0]
+    if (!tests) {
+      tests = { name: 'machine_tests', compilation_units: [], libraries: [library.name] }
+      project.value.test_targets.push(tests)
+    }
+    return { library, tests }
+  }
+
   function addMachine(name: string, namespace: string): Machine {
-    const new_machine = reactive<Machine>({
-      name: name,
-      namespace: namespace,
+    const machine = reactive<Machine>({
+      name: name.trim(),
+      namespace: namespace.trim(),
       events: [],
       states: [],
       transitions: [],
       guards: [],
-      context: false,
       actions: [],
+      context: false,
+      action_code: {},
+      guard_code: {},
     })
-    project.value.machines.push(new_machine)
-    return new_machine
+    project.value.machines.push(machine)
+    const targets = ensureDefaultTargets()
+    targets.library.compilation_units.push(machineSourcePath(machine))
+    targets.tests.compilation_units.push(machineTestPath(machine))
+    return machine
   }
 
-  function addNamespace(name: NamespaceName) {
-    project.value.namespaces.push(name)
+  function addNamespace(name: NamespaceName): boolean {
+    return nonBlankUniquePush(project.value.namespaces, name)
   }
 
   function removeMachine(machineToRemove: Machine) {
+    const sourcePath = machineSourcePath(machineToRemove)
+    const testPath = machineTestPath(machineToRemove)
     project.value.machines = project.value.machines.filter((machine) => machine !== machineToRemove)
+    project.value.libraries?.forEach((library) => {
+      library.compilation_units = library.compilation_units.filter((path) => path !== sourcePath)
+    })
+    project.value.test_targets?.forEach((target) => {
+      target.compilation_units = target.compilation_units.filter((path) => path !== testPath)
+    })
   }
 
   function removeNamespace(namespaceToRemove: NamespaceName) {
-    project.value.namespaces = project.value.namespaces.filter(
-      (namespace) => namespace !== namespaceToRemove
+    const machines = project.value.machines.filter(
+      (machine) => machine.namespace === namespaceToRemove
     )
+    machines.forEach(removeMachine)
+    project.value.namespaces = project.value.namespaces.filter((item) => item !== namespaceToRemove)
   }
 
-  function addEventToMachine(name: EventName, machine: Machine) {
-    machine.events.push(name)
+  function addEventToMachine(name: EventName, machine: Machine): boolean {
+    return nonBlankUniquePush(machine.events, name)
   }
 
   function removeEventFromMachine(eventToRemove: EventName, machine: Machine) {
     machine.events = machine.events.filter((event) => event !== eventToRemove)
+    machine.transitions = machine.transitions.filter(
+      (transition) => transition.event !== eventToRemove
+    )
   }
 
-  function addStateToMachine(name: StateName, machine: Machine) {
-    machine.states.push(name)
+  function addStateToMachine(name: StateName, machine: Machine): boolean {
+    const added = nonBlankUniquePush(machine.states, name)
+    if (added && !machine.initial_state) machine.initial_state = name.trim()
+    return added
+  }
+
+  function setInitialState(machine: Machine, state: StateName) {
+    if (machine.states.includes(state)) machine.initial_state = state
   }
 
   function removeStateFromMachine(stateToRemove: StateName, machine: Machine) {
-    machine.events = machine.events.filter((state) => state !== stateToRemove)
+    machine.states = machine.states.filter((state) => state !== stateToRemove)
+    machine.transitions = machine.transitions.filter(
+      (transition) =>
+        transition.start_state !== stateToRemove && transition.target_state !== stateToRemove
+    )
+    if (machine.initial_state === stateToRemove) machine.initial_state = machine.states[0]
   }
 
-  function addActionToMachine(name: ActionName, machine: Machine) {
-    machine.actions.push(name)
+  function addActionToMachine(name: ActionName, machine: Machine): boolean {
+    return nonBlankUniquePush(machine.actions, name)
   }
 
-  function addActionToTransition(name: ActionName, transition: Transition) {
-    transition.actions.push(name)
+  function removeActionFromMachine(actionToRemove: ActionName, machine: Machine) {
+    machine.actions = machine.actions.filter((action) => action !== actionToRemove)
+    machine.transitions.forEach((transition) => {
+      transition.actions = transition.actions.filter((action) => action !== actionToRemove)
+    })
+    delete machine.action_code?.[actionToRemove]
   }
 
-  function addGuardToMachine(name: GuardName, machine: Machine) {
-    machine.guards.push(name)
+  function setActionCode(machine: Machine, action: ActionName, code: string) {
+    machine.action_code ??= {}
+    machine.action_code[action] = code
   }
 
-  function addGuardToTransition(name: GuardName, transition: Transition) {
-    transition.guard = name
+  function addActionToTransition(name: ActionName, transition: Transition): boolean {
+    return nonBlankUniquePush(transition.actions, name)
+  }
+
+  function removeActionFromTransition(name: ActionName, transition: Transition) {
+    transition.actions = transition.actions.filter((action) => action !== name)
+  }
+
+  function addGuardToMachine(name: GuardName, machine: Machine): boolean {
+    return nonBlankUniquePush(machine.guards, name)
   }
 
   function removeGuardFromMachine(guardToRemove: GuardName, machine: Machine) {
     machine.guards = machine.guards.filter((guard) => guard !== guardToRemove)
+    machine.transitions.forEach((transition) => {
+      if (transition.guard === guardToRemove) delete transition.guard
+    })
+    delete machine.guard_code?.[guardToRemove]
+  }
+
+  function setGuardCode(machine: Machine, guard: GuardName, expression: string) {
+    machine.guard_code ??= {}
+    machine.guard_code[guard] = expression
+  }
+
+  function addGuardToTransition(name: GuardName, transition: Transition) {
+    transition.guard = name.trim() || undefined
+  }
+
+  function clearGuardFromTransition(transition: Transition) {
+    delete transition.guard
   }
 
   function addTransitionToMachine(
@@ -91,449 +242,353 @@ export const useProjectStore = defineStore('project', () => {
     targetState: StateName,
     machine: Machine
   ): Transition {
-    const new_transition = reactive<Transition>({
-      event: event,
+    if (
+      !machine.states.includes(startState) ||
+      !machine.states.includes(targetState) ||
+      !machine.events.includes(event)
+    )
+      throw new Error('Transitions require existing start state, event, and target state.')
+
+    const transition = reactive<Transition>({
+      event,
       start_state: startState,
       target_state: targetState,
       actions: [],
     })
-    machine.transitions.push(new_transition)
-    return new_transition
+    machine.transitions.push(transition)
+    return transition
+  }
+
+  function removeTransitionFromMachine(transitionToRemove: Transition, machine: Machine) {
+    machine.transitions = machine.transitions.filter(
+      (transition) => transition !== transitionToRemove
+    )
+  }
+
+  function enableContext(machine: Machine, name = `${machine.name || 'Machine'}Context`) {
+    if (!machine.context) machine.context = { name, entries: [] }
+  }
+
+  function disableContext(machine: Machine) {
+    machine.context = false
+  }
+
+  function addContextEntry(machine: Machine, entry: ContextEntry): boolean {
+    if (!machine.context || !entry.name.trim() || !entry.type.trim()) return false
+    if (machine.context.entries.some((item) => item.name === entry.name.trim())) return false
+    machine.context.entries.push({
+      name: entry.name.trim(),
+      type: entry.type.trim(),
+      value: entry.value.trim(),
+    })
+    return true
+  }
+
+  function removeContextEntry(machine: Machine, entryToRemove: ContextEntry) {
+    if (!machine.context) return
+    machine.context.entries = machine.context.entries.filter((entry) => entry !== entryToRemove)
+  }
+
+  function setMachineContextType(machine: Machine, typeKey: string) {
+    machine.context_type = typeKey || undefined
+    if (typeKey) machine.context = false
+  }
+
+  function addType(name: string, namespace: string): CppType | undefined {
+    const candidate: CppType = {
+      name: name.trim(),
+      namespace: namespace.trim(),
+      fields: [],
+      includes: [],
+    }
+    project.value.types ??= []
+    if (!candidate.name || !candidate.namespace) return undefined
+    if (project.value.types.some((type) => cppTypeKey(type) === cppTypeKey(candidate))) {
+      return undefined
+    }
+    project.value.types.push(candidate)
+    if (project.value.libraries?.[0]) project.value.libraries[0].types.push(cppTypeKey(candidate))
+    return candidate
+  }
+
+  function removeType(typeToRemove: CppType) {
+    const key = cppTypeKey(typeToRemove)
+    project.value.types = (project.value.types ?? []).filter((type) => type !== typeToRemove)
+    project.value.machines.forEach((machine) => {
+      if (machine.context_type === key) machine.context_type = undefined
+    })
+    project.value.libraries?.forEach((library) => {
+      library.types = library.types.filter((type) => type !== key)
+    })
+  }
+
+  function addFieldToType(type: CppType, entry: ContextEntry): boolean {
+    if (!entry.name.trim() || !entry.type.trim()) return false
+    if (type.fields.some((field) => field.name === entry.name.trim())) return false
+    type.fields.push({
+      name: entry.name.trim(),
+      type: entry.type.trim(),
+      value: entry.value.trim(),
+    })
+    return true
+  }
+
+  function removeFieldFromType(type: CppType, entry: ContextEntry) {
+    type.fields = type.fields.filter((field) => field !== entry)
+  }
+
+  function setTypeIncludes(type: CppType, includes: string) {
+    type.includes = includes
+      .split(',')
+      .map((include) => include.trim())
+      .filter(Boolean)
+  }
+
+  function addCompilationUnit(
+    path: string,
+    kind: CompilationUnit['kind']
+  ): CompilationUnit | undefined {
+    project.value.compilation_units ??= []
+    const normalizedPath = path.trim()
+    if (
+      !normalizedPath ||
+      allCompilationUnits(project.value).some((unit) => unit.path === normalizedPath)
+    ) {
+      return undefined
+    }
+    const unit = reactive<CompilationUnit>({ path: normalizedPath, kind, content: '' })
+    project.value.compilation_units.push(unit)
+    return unit
+  }
+
+  function removeCompilationUnit(unitToRemove: CompilationUnit) {
+    project.value.compilation_units = (project.value.compilation_units ?? []).filter(
+      (unit) => unit !== unitToRemove
+    )
+    project.value.libraries?.forEach((library) => {
+      library.compilation_units = library.compilation_units.filter(
+        (path) => path !== unitToRemove.path
+      )
+    })
+    project.value.test_targets?.forEach((target) => {
+      target.compilation_units = target.compilation_units.filter(
+        (path) => path !== unitToRemove.path
+      )
+    })
+  }
+
+  function addLibrary(name: string, kind: LibraryKind): LibraryTarget | undefined {
+    project.value.libraries ??= []
+    const normalizedName = name.trim()
+    if (
+      !normalizedName ||
+      project.value.libraries.some((library) => library.name === normalizedName)
+    ) {
+      return undefined
+    }
+    const library = reactive<LibraryTarget>({
+      name: normalizedName,
+      kind,
+      compilation_units: [],
+      types: [],
+      dependencies: [],
+    })
+    project.value.libraries.push(library)
+    return library
+  }
+
+  function removeLibrary(libraryToRemove: LibraryTarget) {
+    project.value.libraries = (project.value.libraries ?? []).filter(
+      (library) => library !== libraryToRemove
+    )
+    project.value.test_targets?.forEach((target) => {
+      target.libraries = target.libraries.filter((library) => library !== libraryToRemove.name)
+    })
+  }
+
+  function toggleLibraryUnit(library: LibraryTarget, path: string, selected: boolean) {
+    library.compilation_units = selected
+      ? [...new Set([...library.compilation_units, path])]
+      : library.compilation_units.filter((item) => item !== path)
+  }
+
+  function toggleLibraryType(library: LibraryTarget, type: string, selected: boolean) {
+    library.types = selected
+      ? [...new Set([...library.types, type])]
+      : library.types.filter((item) => item !== type)
+  }
+
+  function toggleLibraryDependency(
+    library: LibraryTarget,
+    dependency: OptionalDependency,
+    selected: boolean
+  ) {
+    if (selected && (dependency === 'sdl2' || dependency === 'sdl3')) {
+      const other = dependency === 'sdl2' ? 'sdl3' : 'sdl2'
+      project.value.libraries?.forEach((target) => {
+        target.dependencies = target.dependencies.filter((item) => item !== other)
+      })
+    }
+    library.dependencies = selected
+      ? [...new Set([...library.dependencies, dependency])]
+      : library.dependencies.filter((item) => item !== dependency)
+  }
+
+  function addTestTarget(name: string): TestTarget | undefined {
+    project.value.test_targets ??= []
+    const normalizedName = name.trim()
+    if (
+      !normalizedName ||
+      project.value.test_targets.some((target) => target.name === normalizedName)
+    ) {
+      return undefined
+    }
+    const target = reactive<TestTarget>({
+      name: normalizedName,
+      compilation_units: [],
+      libraries: [],
+    })
+    project.value.test_targets.push(target)
+    return target
+  }
+
+  function removeTestTarget(targetToRemove: TestTarget) {
+    project.value.test_targets = (project.value.test_targets ?? []).filter(
+      (target) => target !== targetToRemove
+    )
+  }
+
+  function toggleTestUnit(target: TestTarget, path: string, selected: boolean) {
+    target.compilation_units = selected
+      ? [...new Set([...target.compilation_units, path])]
+      : target.compilation_units.filter((item) => item !== path)
+  }
+
+  function toggleTestLibrary(target: TestTarget, library: string, selected: boolean) {
+    target.libraries = selected
+      ? [...new Set([...target.libraries, library])]
+      : target.libraries.filter((item) => item !== library)
   }
 
   function generateExport(): string {
-    const jsonString = JSON.stringify(project.value)
-    const gzippedData = pako.gzip(jsonString)
-    // spread because it spreads the Uint8Array into indivual bytes
-    // which from CharCode turns into characters
-    const base64Encoded = btoa(String.fromCharCode(...gzippedData))
-
-    const lines = []
-    for (let i = 0; i < base64Encoded.length; i += 78) {
-      lines.push(`# ${base64Encoded.slice(i, i + 78)}`)
-    }
-
-    return lines.join('\n')
+    const gzippedData = pako.gzip(JSON.stringify(project.value))
+    const base64Encoded = globalThis.btoa(String.fromCharCode(...gzippedData))
+    return (
+      base64Encoded
+        .match(/.{1,78}/g)
+        ?.map((line) => `# ${line}`)
+        .join('\n') ?? ''
+    )
   }
 
-  function hydrateExport(export_text: string): void {
-    console.log('Hydrating export')
+  function hydrateExport(exportText: string): void {
+    let parsed: Project
     try {
-      const parsedJson = JSON.parse(export_text)
-      if (typeof parsedJson === 'object' && parsedJson !== null) {
-        console.log('Parsed JSON success!')
-        project.value = parsedJson
-        return
-      }
+      parsed = JSON.parse(exportText) as Project
     } catch {
-      //
+      const base64Data = exportText
+        .split('\n')
+        .map((line) => line.replace(/^#\s?/, ''))
+        .join('')
+      const binaryString = globalThis.atob(base64Data)
+      const binaryData = Uint8Array.from(binaryString, (char) => char.charCodeAt(0))
+      parsed = JSON.parse(pako.inflate(binaryData, { to: 'string' })) as Project
     }
-
-    const base64Data = export_text
-      .split('\n')
-      .map((line) => (line.startsWith('# ') ? line.slice(2) : line))
-      .join('')
-
-    const binaryString = atob(base64Data)
-
-    const binaryData = new Uint8Array(binaryString.length)
-    for (let i = 0; i < binaryString.length; i++) {
-      binaryData[i] = binaryString.charCodeAt(i)
-    }
-
-    const decompressedData = pako.inflate(binaryData, { to: 'string' })
-    console.log('Decompressed Data')
-    const parsed = JSON.parse(decompressedData)
-    console.log('Parsing compressed JSON success!')
-    project.value = parsed
+    project.value = normalizeProject(parsed)
   }
 
   type MachinesByNamespace = Record<NamespaceName, Machine[]>
-
   const machinesByNamespace = computed(() => {
-    const results: MachinesByNamespace = {} as MachinesByNamespace
+    const results: MachinesByNamespace = {}
     project.value.namespaces.forEach((namespace) => {
       results[namespace] = []
     })
-
     project.value.machines.forEach((machine) => {
-      results[machine.namespace].push(machine)
+      ;(results[machine.namespace] ??= []).push(machine)
     })
     return results
   })
 
-  const get_machine_header = computed(() => {
-    // Minimal sanitizer: make a reasonable C++ identifier from an input string
-    const ident = (raw: string): string => {
-      let s = raw.trim().replace(/[^a-zA-Z0-9_]/g, '_')
-      if (!s) s = '_'
-      if (/[0-9]/.test(s[0])) s = '_' + s
-      return s
-    }
-
-    return (machine: Machine) => {
-      const ns = ident(machine.namespace || 'global')
-      const cls = ident(machine.name || 'StateMachine')
-      const events = (machine.events || []).map(ident)
-
-      const lines: string[] = []
-      lines.push('#pragma once')
-      lines.push('#include <memory>')
-      lines.push('')
-      lines.push(`namespace ${ns} {`)
-      lines.push('')
-
-      lines.push(`class ${cls} {`)
-      lines.push('public:')
-      lines.push(`  ${cls}();`)
-      lines.push(`  ~${cls}();`)
-      lines.push('')
-      lines.push(`  ${cls}(${cls}&&) noexcept;`)
-      lines.push(`  ${cls}& operator=(${cls}&&) noexcept;`)
-      lines.push('')
-      lines.push(`  ${cls}(const ${cls}&) = delete;`)
-      lines.push(`  ${cls}& operator=(const ${cls}&) = delete;`)
-      lines.push('')
-      if (events.length === 0) {
-        // keep a minimal API even if there are no events
-        lines.push('  // No events defined in JSON.')
-      } else {
-        for (const ev of events) lines.push(`  void ${ev}();`)
-      }
-      lines.push('')
-      lines.push('private:')
-      lines.push('  struct Impl;') // forward-declared implementation
-      lines.push('  std::unique_ptr<Impl> impl;') // PIMPL pointer (MSVC-safe)");
-      lines.push('};')
-      lines.push('')
-      lines.push(`} // namespace ${ns}`)
-      lines.push('')
-      return lines.join('\n')
-    }
-  })
-
-  const get_machine_events_header = computed(() => {
-    const ident = (raw: string): string => {
-      let s = (raw ?? '').trim().replace(/[^a-zA-Z0-9_]/g, '_')
-      if (!s) s = '_'
-      if (/[0-9]/.test(s[0])) s = '_' + s
-      return s
-    }
-
-    const uniq = (arr: string[]) => {
-      const seen = new Set<string>()
-      const out: string[] = []
-      for (const x of arr)
-        if (!seen.has(x)) {
-          seen.add(x)
-          out.push(x)
-        }
-      return out
-    }
-
-    return (machine: Machine) => {
-      const ns = ident(machine.namespace || 'global')
-      const cls = ident(machine.name || 'StateMachine')
-      const events = uniq((machine.events || []).map(ident))
-
-      const lines: string[] = []
-      lines.push('#pragma once')
-      lines.push('#include <type_traits>')
-      lines.push('#include <utility>')
-      lines.push('')
-      lines.push('#include <eventpp/hetereventdispatcher.h>')
-      lines.push('')
-      lines.push(`namespace ${ns} {`)
-      lines.push('')
-
-      // ---- events ----
-      lines.push('// ---- events ----')
-      if (events.length === 0) {
-        lines.push('struct _NoopEvent {};')
-      } else {
-        for (const ev of events) lines.push(`struct ${ev} {};`)
-      }
-      lines.push('')
-
-      // ---- typed bus ----
-      lines.push('// ---- typed bus ----')
-      lines.push('// No runtime ids. Only types listed here can be emitted/listened to.')
-      lines.push('template <class... Es>')
-      lines.push('class TypedBus {')
-      lines.push('public:')
-      lines.push('  template <class E, class Fn>')
-      lines.push('  void on(Fn&& fn) {')
-      lines.push(
-        '    static_assert((std::is_same_v<E, Es> || ...), "Event type not registered in this bus");'
-      )
-      lines.push('    dispatcher_.template appendListener<E>(std::forward<Fn>(fn));')
-      lines.push('  }')
-      lines.push('')
-      lines.push('  template <class E>')
-      lines.push('  void emit(const E& ev) {')
-      lines.push(
-        '    static_assert((std::is_same_v<E, Es> || ...), "Event type not registered in this bus");'
-      )
-      lines.push('    dispatcher_.template dispatch<E>(ev);')
-      lines.push('  }')
-      lines.push('')
-      lines.push('private:')
-      // note: dispatcher signature is void(const Es&)...
-      lines.push('  eventpp::HeterEventDispatcher<void(const Es&)...> dispatcher_;')
-      lines.push('};')
-      lines.push('')
-      lines.push(`using ${cls}Bus = TypedBus<${events.length ? events.join(', ') : '_NoopEvent'}>;`)
-      lines.push('')
-      lines.push(`} // namespace ${ns}`)
-      lines.push('')
-      return lines.join('\n')
-    }
-  })
-
-  const get_machine_source = computed(() => {
-    // sanitize raw strings into valid C++ identifiers
-    const ident = (raw: string): string => {
-      let s = (raw ?? '').trim().replace(/[^a-zA-Z0-9_]/g, '_')
-      if (!s) s = '_'
-      if (/[0-9]/.test(s[0])) s = '_' + s
-      return s
-    }
-
-    // helper to unique+stable sort while preserving original order
-    const uniq = (arr: string[]) => {
-      const seen = new Set<string>()
-      const out: string[] = []
-      for (const x of arr)
-        if (!seen.has(x)) {
-          seen.add(x)
-          out.push(x)
-        }
-      return out
-    }
-
-    return (machine: Machine) => {
-      const ns = ident(machine.namespace || 'global')
-      const cls = ident(machine.name || 'StateMachine')
-
-      const events = uniq((machine.events || []).map(ident))
-      const states = uniq((machine.states || []).map(ident))
-      const guards = uniq(((machine as any).guards || []).map(ident))
-      const actions = uniq(((machine as any).actions || []).map(ident))
-
-      type T = {
-        event: string
-        start_state: string
-        target_state: string
-        guard?: string | null
-        actions?: string[] | null
-      }
-      const transitions: T[] = ((machine.transitions || []) as any[]).map((t) => ({
-        event: ident(t.event),
-        start_state: ident(t.start_state),
-        target_state: ident(t.target_state),
-        guard: t.guard ? ident(t.guard) : null,
-        actions: (t.actions || []).map(ident),
-      }))
-
-      // choose an initial state (prefer first transition's start_state; else first listed state)
-      const initialState = transitions[0]?.start_state ?? states[0] ?? '_Initial'
-
-      const lines: string[] = []
-      lines.push(`#include "${cls}.hpp"`)
-      lines.push(`#include <boost/sml.hpp>`)
-      lines.push(`#include <memory>`)
-      lines.push(`#include <utility>`)
-      lines.push('')
-      lines.push(`namespace sml = boost::sml;`)
-      lines.push('')
-      lines.push(`namespace ${ns} {`)
-      lines.push('')
-      lines.push(`namespace { // TU-local internals (hidden from headers)`)
-
-      // ---- events ----
-      lines.push('')
-      lines.push(`// ---- events ----`)
-      if (events.length === 0) {
-        // define a dummy event to keep the machine valid if someone forgot events
-        lines.push(`struct _NoopEvent {};`)
-      } else {
-        for (const ev of events) lines.push(`struct ${ev} {};`)
-      }
-
-      // ---- state tags ----
-      lines.push('')
-      lines.push(`// ---- state tags ----`)
-      const stateSet = new Set(states)
-      // Also ensure every start/target from transitions has a state tag
-      for (const t of transitions) {
-        if (!stateSet.has(t.start_state)) {
-          stateSet.add(t.start_state)
-          states.push(t.start_state)
-        }
-        if (!stateSet.has(t.target_state)) {
-          stateSet.add(t.target_state)
-          states.push(t.target_state)
-        }
-      }
-      if (stateSet.size === 0) {
-        lines.push(`struct ${ident(initialState)} {};`)
-      } else {
-        for (const st of uniq([...stateSet])) lines.push(`struct ${st} {};`)
-      }
-
-      // ---- actions ----
-      lines.push('')
-      lines.push(`// ---- actions ----`)
-      if (actions.length === 0 && transitions.some((t) => t.actions && t.actions.length)) {
-        // fallback if transitions referenced actions but top-level list was empty
-        const fromTrans = uniq(transitions.flatMap((t) => t.actions || []))
-        for (const a of fromTrans) actions.push(a)
-      }
-      if (actions.length === 0) {
-        lines.push(`// (none)`)
-      } else {
-        for (const a of actions) {
-          // struct style to match your reference (MSVC-friendly)
-          const evParam = events.length === 1 ? `${events[0]}&` : 'auto const&'
-          lines.push(`struct ${a} {`)
-          lines.push(`  void operator()(const ${evParam}) const noexcept {`)
-          lines.push(`    // TODO: side-effects for action "${a}"`)
-          lines.push(`  }`)
-          lines.push(`};`)
-        }
-      }
-
-      // ---- guards ----
-      lines.push('')
-      lines.push(`// ---- guards ----`)
-      if (guards.length === 0 && transitions.some((t) => t.guard)) {
-        const fromTrans = uniq(transitions.map((t) => t.guard).filter(Boolean) as string[])
-        for (const g of fromTrans) guards.push(g)
-      }
-      if (guards.length === 0) {
-        lines.push(`// (none)`)
-      } else {
-        for (const g of guards) {
-          const evParam = events.length === 1 ? `${events[0]}&` : 'auto const&'
-          lines.push(`struct ${g} {`)
-          lines.push(`  bool operator()(const ${evParam}) const noexcept {`)
-          lines.push(`    // TODO: predicate for guard "${g}"`)
-          lines.push(`    return true;`)
-          lines.push(`  }`)
-          lines.push(`};`)
-        }
-      }
-
-      // ---- transition table ----
-      lines.push('')
-      lines.push(`// ---- transition table ----`)
-      lines.push(`struct ${cls}Table {`)
-      lines.push(`  auto operator()() const {`)
-      lines.push(`    using sml::event;`)
-      lines.push(`    using sml::state;`)
-      lines.push(`    using sml::make_transition_table;`)
-      lines.push(``)
-      lines.push(`    return make_transition_table(`)
-
-      // Build transition rows
-      const rows: string[] = []
-      let initialMarked = false
-      if (transitions.length === 0 && events.length > 0) {
-        // fallback: a self-loop so machine compiles
-        const ev = events[0]
-        const st = initialState
-        rows.push(`      *state<${st}> + event<${ev}> = state<${st}>`)
-        initialMarked = true
-      } else {
-        for (const t of transitions) {
-          const star = !initialMarked && t.start_state === initialState ? '*' : ' '
-          if (star === '*') initialMarked = true
-
-          const guardPart = t.guard ? ` [${t.guard}{}]` : ''
-          let actionPart = ''
-          const acts = t.actions || []
-          if (acts.length === 1) actionPart = ` / ${acts[0]}{}`
-          else if (acts.length > 1) {
-            actionPart = ` / (${acts.map((a) => `${a}{}`).join(', ')})`
-          }
-
-          rows.push(
-            `      ${star}state<${t.start_state}> + event<${t.event}>${guardPart}${actionPart} = state<${t.target_state}>`
-          )
-        }
-      }
-
-      // join rows with commas
-      for (let i = 0; i < rows.length; i++) {
-        const sep = i === rows.length - 1 ? '' : ','
-        lines.push(rows[i] + sep)
-      }
-      lines.push(`    );`)
-      lines.push(`  }`)
-      lines.push(`};`)
-      lines.push('')
-      lines.push(`} // anonymous namespace`)
-      lines.push('')
-
-      // ---- PIMPL ----
-      lines.push(`// ---- PIMPL ----`)
-      lines.push(`struct ${cls}::Impl {`)
-      lines.push(`  sml::sm<${cls}Table> sm;`)
-      lines.push('')
-      // per-event methods
-      if (events.length === 0) {
-        lines.push(`  void _noop() {}`)
-      } else {
-        for (const ev of events) {
-          lines.push(`  void ${ev}() { sm.process_event(${ev}{}); }`)
-        }
-      }
-      lines.push(`};`)
-      lines.push('')
-      // ---- public API ----
-      lines.push(`// ---- public API ----`)
-      lines.push(`${cls}::${cls}() : impl(std::make_unique<Impl>()) {}`)
-      lines.push(`${cls}::~${cls}() = default;`)
-      lines.push('')
-      lines.push(`${cls}::${cls}(${cls}&&) noexcept = default;`)
-      lines.push(`${cls}& ${cls}::operator=(${cls}&&) noexcept = default;`)
-      lines.push('')
-      // event forwarders
-      for (const ev of events) {
-        lines.push(`void ${cls}::${ev}() { impl->${ev}(); }`)
-      }
-      if (events.length === 0) {
-        lines.push(`// No events defined; façade has no dispatchers.`)
-      }
-      lines.push('')
-      lines.push(`} // namespace ${ns}`)
-      lines.push('')
-
-      return lines.join('\n')
-    }
-  })
+  const get_machine_header = computed(
+    () => (machine: Machine) => generateMachineHeader(machine, project.value.types ?? [])
+  )
+  const get_machine_events_header = computed(() => generateEventsHeader)
+  const get_machine_source = computed(
+    () => (machine: Machine) => generateMachineSource(machine, project.value.types ?? [])
+  )
+  const get_machine_files = computed(
+    () => (machine: Machine) => generateMachineFiles(machine, project.value.types ?? [])
+  )
+  const validate_machine = computed(() => machineValidationErrors)
+  const compilation_units = computed(() => allCompilationUnits(project.value))
+  const source_compilation_units = computed(() =>
+    compilation_units.value.filter((unit) => unit.kind === 'source')
+  )
+  const test_compilation_units = computed(() =>
+    compilation_units.value.filter((unit) => unit.kind === 'test')
+  )
+  const get_cmake = computed(() => generateCMakeLists(project.value))
+  const get_project_files = computed(() => generateProjectFiles(project.value))
+  const build_validation_errors = computed(() => projectBuildValidationErrors(project.value))
 
   return {
     project,
+    setProjectName,
     addMachine,
     addNamespace,
-    addEventToMachine,
-    addStateToMachine,
-    addGuardToMachine,
-    addTransitionToMachine,
-    machinesByNamespace,
-    generateExport,
-    get_machine_header,
-    get_machine_source,
-    get_machine_events_header,
-    hydrateExport,
     removeMachine,
     removeNamespace,
-    addGuardToTransition,
-    addActionToTransition,
-    addActionToMachine,
+    addEventToMachine,
     removeEventFromMachine,
-    removeGuardFromMachine,
+    addStateToMachine,
+    setInitialState,
     removeStateFromMachine,
+    addActionToMachine,
+    removeActionFromMachine,
+    setActionCode,
+    addActionToTransition,
+    removeActionFromTransition,
+    addGuardToMachine,
+    removeGuardFromMachine,
+    setGuardCode,
+    addGuardToTransition,
+    clearGuardFromTransition,
+    addTransitionToMachine,
+    removeTransitionFromMachine,
+    enableContext,
+    disableContext,
+    addContextEntry,
+    removeContextEntry,
+    setMachineContextType,
+    addType,
+    removeType,
+    addFieldToType,
+    removeFieldFromType,
+    setTypeIncludes,
+    addCompilationUnit,
+    removeCompilationUnit,
+    addLibrary,
+    removeLibrary,
+    toggleLibraryUnit,
+    toggleLibraryType,
+    toggleLibraryDependency,
+    addTestTarget,
+    removeTestTarget,
+    toggleTestUnit,
+    toggleTestLibrary,
+    machinesByNamespace,
+    generateExport,
+    hydrateExport,
+    get_machine_header,
+    get_machine_events_header,
+    get_machine_source,
+    get_machine_files,
+    validate_machine,
+    compilation_units,
+    source_compilation_units,
+    test_compilation_units,
+    get_cmake,
+    get_project_files,
+    build_validation_errors,
   }
 })

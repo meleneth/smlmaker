@@ -1,201 +1,117 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 
 import { useProjectStore } from './project'
 
-describe('project Store generation', () => {
-  beforeEach(() => {
-    // creates a fresh pinia and makes it active
-    // so it's automatically picked up by any useStore() call
-    setActivePinia(createPinia())
-  })
+describe('C++ generation', () => {
+  beforeEach(() => setActivePinia(createPinia()))
 
-  it('#get_machine_events_header_typed_bus_no_id', () => {
-    const project_store = useProjectStore()
-    project_store.addNamespace('someNamespace')
-    const machine = project_store.addMachine('aMachine', 'someNamespace')
-    project_store.addEventToMachine('someEvent', machine)
-
-    expect(project_store.get_machine_events_header(machine)).toContain('HeterEventDispatcher')
-    expect(project_store.get_machine_events_header(machine)).toContain('static_assert')
-  })
-
-  it('#get_machine_events_header (typed bus, no id)', () => {
-    const project_store = useProjectStore()
-    project_store.addNamespace('someNamespace')
-    const machine = project_store.addMachine('aMachine', 'someNamespace')
-    project_store.addEventToMachine('someEvent', machine)
-
-    const expected_contents = `#pragma once
-#include <type_traits>
-#include <utility>
-
-#include <eventpp/hetereventdispatcher.h>
-
-namespace someNamespace {
-
-// ---- events ----
-struct someEvent {};
-
-// ---- typed bus ----
-// No runtime ids. Only types listed here can be emitted/listened to.
-template <class... Es>
-class TypedBus {
-public:
-  template <class E, class Fn>
-  void on(Fn&& fn) {
-    static_assert((std::is_same_v<E, Es> || ...), "Event type not registered in this bus");
-    dispatcher_.template appendListener<E>(std::forward<Fn>(fn));
+  function populatedMachine() {
+    const store = useProjectStore()
+    store.addNamespace('game')
+    const machine = store.addMachine('Door', 'game')
+    store.addStateToMachine('Closed', machine)
+    store.addStateToMachine('Open', machine)
+    store.addEventToMachine('OpenRequested', machine)
+    store.addEventToMachine('CloseRequested', machine)
+    store.addGuardToMachine('CanOpen', machine)
+    store.addActionToMachine('RecordOpen', machine)
+    const transition = store.addTransitionToMachine('Closed', 'OpenRequested', 'Open', machine)
+    store.addGuardToTransition('CanOpen', transition)
+    store.addActionToTransition('RecordOpen', transition)
+    store.addTransitionToMachine('Open', 'CloseRequested', 'Closed', machine)
+    return { store, machine }
   }
 
-  template <class E>
-  void emit(const E& ev) {
-    static_assert((std::is_same_v<E, Es> || ...), "Event type not registered in this bus");
-    dispatcher_.template dispatch<E>(ev);
-  }
+  it('generates a correctly shaped eventpp heterogeneous dispatcher', () => {
+    const { store, machine } = populatedMachine()
+    const header = store.get_machine_events_header(machine)
 
-private:
-  eventpp::HeterEventDispatcher<void(const Es&)...> dispatcher_;
-};
-
-using aMachineBus = TypedBus<someEvent>;
-
-} // namespace someNamespace
-`
-
-    expect(project_store.get_machine_events_header(machine)).toEqual(expected_contents)
-  })
-
-  it('#get_machine_header', () => {
-    const project_store = useProjectStore()
-    project_store.addNamespace('someNamespace')
-    const machine = project_store.addMachine('aMachine', 'someNamespace')
-    project_store.addStateToMachine('someState', machine)
-    project_store.addStateToMachine('otherState', machine)
-    project_store.addStateToMachine('triState', machine)
-    project_store.addEventToMachine('someEvent', machine)
-    project_store.addGuardToMachine('someGuard', machine)
-    project_store.addActionToMachine('someAction', machine)
-    project_store.addActionToMachine('otherAction', machine)
-    project_store.addTransitionToMachine('someState', 'someEvent', 'otherState', machine)
-    const expected_contents = `#pragma once
-#include <memory>
-
-namespace someNamespace {
-
-class aMachine {
-public:
-  aMachine();
-  ~aMachine();
-
-  aMachine(aMachine&&) noexcept;
-  aMachine& operator=(aMachine&&) noexcept;
-
-  aMachine(const aMachine&) = delete;
-  aMachine& operator=(const aMachine&) = delete;
-
-  void someEvent();
-
-private:
-  struct Impl;
-  std::unique_ptr<Impl> impl;
-};
-
-} // namespace someNamespace
-`
-
-    expect(project_store.get_machine_header(machine)).toEqual(expected_contents)
-  })
-
-  it('#get_machine_source', () => {
-    const project_store = useProjectStore()
-    project_store.addNamespace('someNamespace')
-    const machine = project_store.addMachine('aMachine', 'someNamespace')
-    project_store.addStateToMachine('someState', machine)
-    project_store.addStateToMachine('otherState', machine)
-    project_store.addStateToMachine('triState', machine)
-    project_store.addEventToMachine('someEvent', machine)
-    project_store.addGuardToMachine('aGuard', machine)
-    project_store.addActionToMachine('anAction', machine)
-
-    const transition = project_store.addTransitionToMachine(
-      'someState',
-      'someEvent',
-      'otherState',
-      machine
+    expect(header).toContain('eventpp::HeterTuple<void(const Events&)...>')
+    expect(header).toContain('eventpp::HeterEventDispatcher<std::type_index, Prototypes>')
+    expect(header).toContain('dispatcher_.appendListener(')
+    expect(header).toContain('dispatcher_.dispatch(std::type_index(typeid(Event)), event)')
+    expect(header).toContain('class DoorTypedEventBus')
+    expect(header).toContain(
+      'using DoorEventBus = DoorTypedEventBus<DoorEvents::OpenRequested, DoorEvents::CloseRequested>'
     )
+  })
 
-    project_store.addGuardToTransition('aGuard', transition)
-    project_store.addActionToTransition('anAction', transition)
+  it('shares public event types between eventpp and Boost.SML', () => {
+    const { store, machine } = populatedMachine()
+    const header = store.get_machine_header(machine)
+    const source = store.get_machine_source(machine)
 
-    const expected_contents = `#include "aMachine.hpp"
-#include <boost/sml.hpp>
-#include <memory>
-#include <utility>
+    expect(header).toContain('#include "Door_events.hpp"')
+    expect(header).toContain('DoorEventBus& event_bus() noexcept;')
+    expect(source).not.toContain('struct OpenRequested {};')
+    expect(source).toContain('using OpenRequested = DoorEvents::OpenRequested;')
+    expect(source).toContain(
+      'bus.on<game::DoorEvents::OpenRequested>([this](const game::DoorEvents::OpenRequested& value) { sm.process_event(value); });'
+    )
+    expect(source).toContain(
+      'void Door::OpenRequested() { impl_->bus.emit(game::DoorEvents::OpenRequested{}); }'
+    )
+  })
 
-namespace sml = boost::sml;
+  it('generates explicit initial state, context, guard expression, and action body', () => {
+    const { store, machine } = populatedMachine()
+    store.setInitialState(machine, 'Open')
+    store.enableContext(machine, 'DoorContext')
+    store.addContextEntry(machine, { name: 'open_count', type: 'int', value: '0' })
+    store.setGuardCode(machine, 'CanOpen', 'context.open_count < 3')
+    store.setActionCode(machine, 'RecordOpen', '++context.open_count;')
 
-namespace someNamespace {
+    const header = store.get_machine_header(machine)
+    const source = store.get_machine_source(machine)
+    expect(header).toContain('struct DoorContext')
+    expect(header).toContain('int open_count = 0;')
+    expect(source).toContain('bool operator()(DoorContext& context) const')
+    expect(source).toContain('return (context.open_count < 3);')
+    expect(source).toContain('++context.open_count;')
+    expect(source).toContain('*state<Open> + event<CloseRequested>')
+    expect(source).not.toContain('const auto const&')
+  })
 
-namespace { // TU-local internals (hidden from headers)
+  it('sanitizes keywords and provides all downloadable files', () => {
+    const store = useProjectStore()
+    const machine = store.addMachine('class', 'namespace')
+    store.addStateToMachine('1 idle', machine)
+    store.addEventToMachine('switch', machine)
+    store.addTransitionToMachine('1 idle', 'switch', '1 idle', machine)
 
-// ---- events ----
-struct someEvent {};
+    const files = store.get_machine_files(machine)
+    expect(files.map((file) => file.name)).toEqual([
+      'class__events.hpp',
+      'class_.hpp',
+      'class_.cpp',
+    ])
+    expect(files[2].contents).toContain('namespace namespace_')
+    expect(files[2].contents).toContain('event<switch_>')
+  })
 
-// ---- state tags ----
-struct someState {};
-struct otherState {};
-struct triState {};
+  it('reports incomplete machines and sanitized identifier collisions', () => {
+    const store = useProjectStore()
+    const machine = store.addMachine('Machine', 'app')
+    store.addStateToMachine('idle-state', machine)
+    store.addStateToMachine('idle state', machine)
 
-// ---- actions ----
-struct anAction {
-  void operator()(const someEvent&) const noexcept {
-    // TODO: side-effects for action "anAction"
-  }
-};
+    expect(store.validate_machine(machine)).toEqual(
+      expect.arrayContaining([
+        'Add at least one event.',
+        'Add at least one transition.',
+        'Duplicate state C++ identifier(s): idle_state.',
+      ])
+    )
+  })
 
-// ---- guards ----
-struct aGuard {
-  bool operator()(const someEvent&) const noexcept {
-    // TODO: predicate for guard "aGuard"
-    return true;
-  }
-};
+  it('keeps an initial state valid even when it has no outgoing transition', () => {
+    const { store, machine } = populatedMachine()
+    store.addStateToMachine('Waiting', machine)
+    store.setInitialState(machine, 'Waiting')
 
-// ---- transition table ----
-struct aMachineTable {
-  auto operator()() const {
-    using sml::event;
-    using sml::state;
-    using sml::make_transition_table;
-
-    return make_transition_table(
-      *state<someState> + event<someEvent> [aGuard{}] / anAction{} = state<otherState>
-    );
-  }
-};
-
-} // anonymous namespace
-
-// ---- PIMPL ----
-struct aMachine::Impl {
-  sml::sm<aMachineTable> sm;
-
-  void someEvent() { sm.process_event(someEvent{}); }
-};
-
-// ---- public API ----
-aMachine::aMachine() : impl(std::make_unique<Impl>()) {}
-aMachine::~aMachine() = default;
-
-aMachine::aMachine(aMachine&&) noexcept = default;
-aMachine& aMachine::operator=(aMachine&&) noexcept = default;
-
-void aMachine::someEvent() { impl->someEvent(); }
-
-} // namespace someNamespace
-`
-
-    expect(project_store.get_machine_source(machine)).toEqual(expected_contents)
+    const source = store.get_machine_source(machine)
+    expect(source).toContain('struct InitialStateMarkerEvent {};')
+    expect(source).toContain('*state<Waiting> + event<InitialStateMarkerEvent> = state<Waiting>')
   })
 })
