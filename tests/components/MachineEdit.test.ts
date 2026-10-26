@@ -23,24 +23,8 @@ const stubs = {
   },
 
   // Button: invokes handler on click
-  aTButton: {
-    props: ['handler'],
-    template: `<button data-stub="aTButton" type="button" @click="handler?.()"><slot /></button>`,
-  },
-
-  // Input: v-model compatible + emits keyup.enter
-  aTInput: {
-    props: ['modelValue', 'id'],
-    emits: ['update:modelValue', 'keyup'],
-    template: `
-      <input
-        :id="id"
-        data-stub="aTInput"
-        :value="modelValue"
-        @input="$emit('update:modelValue', ($event.target ).value)"
-        @keyup.enter="$emit('keyup', $event)"
-      />
-    `,
+  AtButton: {
+    template: `<button data-stub="AtButton" type="button"><slot /></button>`,
   },
 
   // Not needed for these tests (but we can keep it in DOM)
@@ -63,6 +47,7 @@ const stubs = {
 function makeMachine(overrides: Partial<Machine> = {}): Machine {
   return {
     name: 'CombatantFsm',
+    namespace: 'game',
     states: ['Charging', 'Ready'],
     events: ['Tick', 'Act'],
     guards: ['CanAct'],
@@ -97,10 +82,10 @@ describe('MachineEdit', () => {
 
     // Spy the store methods MachineEdit calls.
     // If your store already defines these, this replaces them with spies safely.
-    store.addEventToMachine = vi.fn()
-    store.addStateToMachine = vi.fn()
-    store.addGuardToMachine = vi.fn()
-    store.addActionToMachine = vi.fn()
+    store.addEventToMachine = vi.fn().mockReturnValue(true)
+    store.addStateToMachine = vi.fn().mockReturnValue(true)
+    store.addGuardToMachine = vi.fn().mockReturnValue(true)
+    store.addActionToMachine = vi.fn().mockReturnValue(true)
     store.addTransitionToMachine = vi.fn()
     store.get_machine_header = vi.fn().mockReturnValue('// header output')
     store.get_machine_source = vi.fn().mockReturnValue('// source output')
@@ -151,7 +136,7 @@ describe('MachineEdit', () => {
   })
 
   it('clicking "Add State" calls the store method', async () => {
-    const buttons = wrapper.findAll('[data-stub="aTButton"]')
+    const buttons = wrapper.findAll('[data-stub="AtButton"]')
     const addStateButton = buttons.find((b) => b.text().includes('Add State'))
     expect(addStateButton).toBeTruthy()
 
@@ -164,7 +149,7 @@ describe('MachineEdit', () => {
   })
 
   it('clicking "Add Event" calls the store method', async () => {
-    const buttons = wrapper.findAll('[data-stub="aTButton"]')
+    const buttons = wrapper.findAll('[data-stub="AtButton"]')
     const addEventButton = buttons.find((b) => b.text().includes('Add Event'))
     expect(addEventButton).toBeTruthy()
 
@@ -175,7 +160,7 @@ describe('MachineEdit', () => {
   })
 
   it('clicking "Add Guard" calls addGuardToMachine)', async () => {
-    const buttons = wrapper.findAll('[data-stub="aTButton"]')
+    const buttons = wrapper.findAll('[data-stub="AtButton"]')
     const addGuardButton = buttons.find((b) => b.text().includes('Add Guard'))
     expect(addGuardButton).toBeTruthy()
 
@@ -188,7 +173,7 @@ describe('MachineEdit', () => {
   })
 
   it('clicking "Add Action" calls addActionToMachine', async () => {
-    const buttons = wrapper.findAll('[data-stub="aTButton"]')
+    const buttons = wrapper.findAll('[data-stub="AtButton"]')
     const addActionButton = buttons.find((b) => b.text().includes('Add Action'))
     expect(addActionButton).toBeTruthy()
 
@@ -199,18 +184,11 @@ describe('MachineEdit', () => {
   })
 
   it('adds a transition using the selected start/event/target', async () => {
-    // There are 3 <select> elements in this component
-    const selects = wrapper.findAll('select')
-    expect(selects.length).toBe(3)
+    await wrapper.get('#transition-start').setValue('Charging')
+    await wrapper.get('#transition-event').setValue('Tick')
+    await wrapper.get('#transition-target').setValue('Ready')
 
-    // start state
-    await selects[0].setValue('Charging')
-    // event
-    await selects[1].setValue('Tick')
-    // target state
-    await selects[2].setValue('Ready')
-
-    const buttons = wrapper.findAll('[data-stub="aTButton"]')
+    const buttons = wrapper.findAll('[data-stub="AtButton"]')
     const addTransitionButton = buttons.find((b) => b.text().includes('Add Transition'))
     expect(addTransitionButton).toBeTruthy()
 

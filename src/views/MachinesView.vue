@@ -1,72 +1,67 @@
 <script setup lang="ts">
-//import { storeToRefs } from 'pinia'
 import { ref } from 'vue'
 
+import MachineEdit from '@/components/MachineEdit.vue'
+import AtAddItem from '@/components/appTulsa/AtAddItem.vue'
+import AtButton from '@/components/appTulsa/AtButton.vue'
+import AtPanel from '@/components/appTulsa/AtPanel.vue'
 import { useProjectStore } from '@/stores/project'
-const project_store = useProjectStore()
-//const { project } = storeToRefs(project_store)
-
 import type { NamespaceName } from '@/types'
 
-import MachineEdit from '@/components/MachineEdit.vue'
-
-import DeleteButtonFor from '@/components/DeleteButtonFor.vue'
-
-import HeaderSection from '@/components/HeaderSection.vue'
-import FancyTextInput from '@/components/FancyTextInput.vue'
-
+const store = useProjectStore()
 const machineToAdd = ref('')
+const namespaceToAdd = ref('')
 
-function add_machine(namespace: NamespaceName) {
-  project_store.addMachine(machineToAdd.value, namespace)
+function addMachine(namespace: NamespaceName) {
+  const name = machineToAdd.value.trim()
+  if (!name) return
+  if (
+    store.project.machines.some(
+      (machine) => machine.namespace === namespace && machine.name === name
+    )
+  )
+    return
+  store.addMachine(name, namespace)
   machineToAdd.value = ''
 }
 
-const namespaceToAdd = ref('')
-
-function add_namespace() {
-  project_store.addNamespace(namespaceToAdd.value)
-  namespaceToAdd.value = ''
+function addNamespace() {
+  if (store.addNamespace(namespaceToAdd.value)) namespaceToAdd.value = ''
 }
-
-defineOptions({
-  name: 'Machines',
-})
 </script>
-<template>
-  <header-section>
-    <template v-slot:label>Define Namespaces</template>
-    <template v-slot:default>
-      Namespaces are where machines live
-      <br />
-      <fancy-text-input
-        v-model="namespaceToAdd"
-        :handler="() => add_namespace()"
-        id="namespace_to_add_input"
-      >
-        Add Namespace
-      </fancy-text-input>
-    </template>
-  </header-section>
 
-  <div v-for="(machines, namespace) of project_store.machinesByNamespace" :key="namespace">
-    <header-section>
-      <template v-slot:label
-        >Namespace:
-        <delete-button-for :handler="() => project_store.removeNamespace(namespace)">
-          {{ namespace }}
-        </delete-button-for>
-      </template>
-      <template v-slot:default>
-        <fancy-text-input
-          v-model="machineToAdd"
-          :handler="() => add_machine(namespace)"
-          id="machine_to_add_input"
+<template>
+  <main class="mx-auto max-w-7xl space-y-6">
+    <AtPanel title="Namespaces" description="Namespaces own generated machines and types.">
+      <AtAddItem
+        id="namespace_to_add_input"
+        v-model="namespaceToAdd"
+        label="Namespace"
+        button-label="Add namespace"
+        @submit="addNamespace"
+      />
+    </AtPanel>
+
+    <AtPanel
+      v-for="(machines, namespace) in store.machinesByNamespace"
+      :key="namespace"
+      :title="`Namespace: ${namespace}`"
+    >
+      <div class="flex items-end gap-3">
+        <div class="flex-1">
+          <AtAddItem
+            id="machine_to_add_input"
+            v-model="machineToAdd"
+            label="Machine name"
+            button-label="Add machine"
+            @submit="addMachine(namespace)"
+          />
+        </div>
+        <AtButton tone="danger" @click="store.removeNamespace(namespace)"
+          >Delete namespace</AtButton
         >
-          Add Machine
-        </fancy-text-input>
-        <MachineEdit :machine="machine" v-for="machine in machines"> </MachineEdit>
-      </template>
-    </header-section>
-  </div>
+      </div>
+      <MachineEdit v-for="machine in machines" :key="machine.name" :machine="machine" />
+    </AtPanel>
+  </main>
 </template>

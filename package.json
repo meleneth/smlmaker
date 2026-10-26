@@ -10,10 +10,13 @@
     "preview": "vite preview",
     "prepare": "husky",
     "test": "vitest",
+    "test:cpp": "vitest run src/generators/cpp.compile.spec.ts",
+    "test:project-cpp": "vitest run src/generators/project.compile.spec.ts",
     "type-check": "vue-tsc --build --force",
     "coverage": "npx vitest run --coverage"
   },
   "dependencies": {
+    "jszip": "^3.10.2",
     "pako": "^2.1.0",
     "pinia": "^3.0.2",
     "vue": "^3.5.13",
